@@ -9,6 +9,7 @@ class Preprocess:
         self.dataset_dir = os.path.abspath(os.path.join(current_dir, "..", "AMLS_Assignment_Dataset"))
         self.images_dir = os.path.join(self.dataset_dir,'dataset')
         self.labels_path = os.path.join(self.dataset_dir, 'attribute_list.csv')
+        self.filtered_labels_path = os.path.join(self.dataset_dir, 'attribute_list_new.csv')
 
     def filter_noise(self):
         """
@@ -29,22 +30,25 @@ class Preprocess:
 
         return real_data
 
-    def new_csv(self, filtered_data_list):
-        file = pd.read_csv(self.labels_path, header = None)
-        for index, row in file.iterrows():
-            if index<=1:
-                continue
-            if row[0] not in filtered_data_list:
-                file.drop(index, axis = 0, inplace=True)
+    def new_csv(self, train_list, test_list):
+        arr = [train_list, test_list]
+        str_arr = ['attribute_list_train.csv','attribute_list_test.csv']
+        for i in range(len(arr)):
+            file = pd.read_csv(self.labels_path, header = None)
+            for index, row in file.iterrows():
+                if index<=1:
+                    continue
+                if row[0] not in arr[i]:
+                    file.drop(index, axis = 0, inplace=True)
 
-        file.to_csv(os.path.join(self.dataset_dir,'attribute_list_new.csv'), index=False)
-        
-        file = open(os.path.join(self.dataset_dir,'attribute_list_new.csv'),'r')
-        data = file.readlines()[1:]
-        file = open(os.path.join(self.dataset_dir,'attribute_list_new.csv'),'w')
-        file.writelines(data)
+            file.to_csv(os.path.join(self.dataset_dir, str_arr[i]), index=False)
+            
+            file = open(os.path.join(self.dataset_dir, str_arr[i]),'r')
+            data = file.readlines()[3:]
+            file = open(os.path.join(self.dataset_dir, str_arr[i]),'w')
+            file.writelines(data)
 
-        return 0
+        return os.path.join(self.dataset_dir, str_arr[0]),os.path.join(self.dataset_dir, str_arr[1])
 
     def split_train_val_test(self, data_list, train_ptg, val_ptg, test_ptg, randomize=True):
         """
@@ -92,6 +96,7 @@ class Preprocess:
 if __name__ == "__main__":        
     inst = Preprocess()
     data_list = inst.filter_noise()
-    c = inst.new_csv(data_list)
+    train_list, val_list, test_list = inst.split_train_val_test(data_list, 0.8,0,0.2)
+    c = inst.new_csv(train_list, test_list)
     # train_list, val_list, test_list = inst.split_train_val_test(data_list, 0.8, 0, 0.2)
     # inst.dir_for_train_val_test(train_list, val_list, test_list)
