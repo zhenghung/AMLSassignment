@@ -138,6 +138,6 @@ for i in range(len(truth_list)-1):
     acc_list.append(None)
 results['Accuracy'] = acc_list
 
-results.to_csv("./results/" + feature_tested + "_" + str(epochs_size) + "_results.csv",index=False)
+results.to_csv("results/" + feature_tested + "_" + str(epochs_size) + "_results.csv",index=False)
 
 
