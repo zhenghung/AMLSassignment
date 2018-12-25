@@ -8,10 +8,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
 
 input_dim = 64
 epochs_size = 50
-feature_tested = 'smiling'
+feature_tested = 'hair_color'
 if feature_tested == 'hair_color':
     output_dim = 7
 else:
@@ -115,7 +117,7 @@ plt.plot(history.history['val_acc'])
 plt.title('model accuracy')
 plt.ylabel('accuracy')
 plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
+plt.legend(['train', 'test'], loc='upper right')
 plt.show(block=False)
 # summarize history for loss
 plt.plot(history.history['loss'])
@@ -123,7 +125,7 @@ plt.plot(history.history['val_loss'])
 plt.title('model loss')
 plt.ylabel('loss')
 plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
+plt.legend(['train', 'test'], loc='bottom right')
 plt.show(block=False)
 
 
@@ -131,6 +133,16 @@ plt.show(block=False)
 print "Model evaluating..."
 scores = model.evaluate_generator(generator=valid_generator,steps=STEP_SIZE_VALID)
 print "Accuracy = ",scores[1]
+
+model_name = "models/" + feature_tested + "_" + str(epochs_size) + "_" + str(input_dim) + "_"
+# serialize model to JSON
+model_json = model.to_json()
+with open(model_name + "model.json", "w") as json_file:
+    json_file.write(model_json)
+# serialize weights to HDF5
+model.save_weights(model_name + "model.h5")
+print("Saved model to disk")
+
 
 print "Model testing..."
 test_generator.reset()
