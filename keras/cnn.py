@@ -4,12 +4,14 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
 
-epochs_size = 10
-feature_tested = 'hair_color'
+input_dim = 64
+epochs_size = 50
+feature_tested = 'smiling'
 if feature_tested == 'hair_color':
     output_dim = 7
 else:
@@ -40,7 +42,7 @@ train_generator=datagen.flow_from_dataframe(
                 seed=42,
                 shuffle=True,
                 class_mode="categorical",
-                target_size=(32,32))
+                target_size=(input_dim,input_dim))
 
 valid_generator=datagen.flow_from_dataframe(
                 dataframe=traindf,
@@ -53,7 +55,7 @@ valid_generator=datagen.flow_from_dataframe(
                 seed=42,
                 shuffle=True,
                 class_mode="categorical",
-                target_size=(32,32))
+                target_size=(input_dim,input_dim))
 
 test_datagen=ImageDataGenerator(rescale=1./255.)
 
@@ -67,12 +69,12 @@ test_generator=test_datagen.flow_from_dataframe(
                 seed=42,
                 shuffle=False,
                 class_mode=None,
-                target_size=(32,32))
+                target_size=(input_dim,input_dim))
 
 print "Model setup"
 model = Sequential()
 model.add(Conv2D(32, (3, 3), padding='same',
-                 input_shape=(32,32,3)))
+                 input_shape=(input_dim,input_dim,3)))
 model.add(Activation('relu'))
 model.add(Conv2D(32, (3, 3)))
 model.add(Activation('relu'))
@@ -96,15 +98,39 @@ STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
 STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
 STEP_SIZE_TEST=test_generator.n//test_generator.batch_size
 
-model.fit_generator(generator=train_generator,
-                    steps_per_epoch=STEP_SIZE_TRAIN,
-                    validation_data=valid_generator,
-                    validation_steps=STEP_SIZE_VALID,
-                    epochs=epochs_size
-                    )
+history = model.fit_generator(generator=train_generator,
+                                steps_per_epoch=STEP_SIZE_TRAIN,
+                                validation_data=valid_generator,
+                                validation_steps=STEP_SIZE_VALID,
+                                epochs=epochs_size,
+                                workers=4
+                                )
+
+print "Plotting"
+# list all data in history
+print(history.history.keys())
+# summarize history for accuracy
+plt.plot(history.history['acc'])
+plt.plot(history.history['val_acc'])
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show(block=False)
+# summarize history for loss
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show(block=False)
+
+
 
 print "Model evaluating..."
-model.evaluate_generator(generator=valid_generator,steps=STEP_SIZE_VALID)
+scores = model.evaluate_generator(generator=valid_generator,steps=STEP_SIZE_VALID)
+print "Accuracy = ",scores[1]
 
 print "Model testing..."
 test_generator.reset()
@@ -123,21 +149,22 @@ results=pd.DataFrame({"Filename":filenames,
 results = results.sort_values('Filename')
 
 truth_list = list(testdf[feature_tested])
-results['Truth'] = truth_list
 
 predictions = list(results['Predictions'])
 count = 0
 for i in range(len(truth_list)):
     if truth_list[i] == predictions[i]:
         count+=1
-accuracy = 100*count/float(len(truth_list))
-print "Accuracy: {:.2f}%".format(accuracy)
+accuracy = count/float(len(truth_list))
+print "Accuracy: {:.2f}%".format(accuracy*100)
 
-acc_list = [accuracy]
-for i in range(len(truth_list)-1):
-    acc_list.append(None)
-results['Accuracy'] = acc_list
+csv_file = "results/" + feature_tested + "_" + str(epochs_size) + "_" + str(input_dim) + "_results.csv"
+results.to_csv(csv_file,index=False)
 
-results.to_csv("results/" + feature_tested + "_" + str(epochs_size) + "_results.csv",index=False)
+file = open(csv_file, 'r')
+data = file.readlines()[1:]
+data.insert(0, '{},,\n'.format(accuracy))
+file = open(csv_file, 'w')
+file.writelines(data)
 
-
+plt.show()

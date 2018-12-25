@@ -72,6 +72,10 @@ class Preprocess:
         return train_list, val_list, test_list
 
     def dir_for_train_val_test(self, train_list, val_list, test_list):
+        """
+        Creates a new directory for training, validation and testing
+        Then copies the selected images from the dataset into them
+        """
         if os.path.isdir(os.path.join(self.dataset_dir, "training")):
             [os.remove(os.path.join(self.dataset_dir, "training", file)) for file in os.listdir(os.path.join(self.dataset_dir, "training"))]
             [os.remove(os.path.join(self.dataset_dir, "validation", file)) for file in os.listdir(os.path.join(self.dataset_dir, "validation"))]
