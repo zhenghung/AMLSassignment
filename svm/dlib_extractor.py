@@ -6,9 +6,9 @@ import dlib
 
 # PATH TO ALL IMAGES
 global basedir, image_paths, target_size
-basedir = './dataset'
-images_dir = os.path.join(basedir,'celeba')
-labels_filename = 'labels.csv'
+basedir = './../AMLS_Assignment_Dataset'
+images_dir = os.path.join(basedir,'dataset')
+labels_filename = 'attribute_list.csv'
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
@@ -90,7 +90,7 @@ def run_dlib_shape(image):
 
     return dlibout, resized_image
 
-def extract_features_labels():
+def extract_features_labels(data_list, column):
     """
     This funtion extracts the landmarks features for all images in the folder 'dataset/celeba'.
     It also extract the gender label for each image.
@@ -103,12 +103,21 @@ def extract_features_labels():
     target_size = None
     labels_file = open(os.path.join(basedir, labels_filename), 'r')
     lines = labels_file.readlines()
-    gender_labels = {line.split(',')[0] : int(line.split(',')[6]) for line in lines[2:]}
+    gender_labels = {line.split(',')[0] : int(line.split(',')[column]) for line in lines[2:]}
     if os.path.isdir(images_dir):
         all_features = []
         all_labels = []
-        for img_path in image_paths:
-            file_name= img_path.split('.')[1].split('/')[-1]
+        count=0
+        percent = 0
+        for file_name in data_list:
+            # file_name= img_path.split('.')[-2].split('/')[-1]
+            img_path = os.path.join(basedir, 'dataset',file_name + '.png')
+            count+=1
+            cur_ptg = int(100*count/float(len(data_list)))
+            progress = int(cur_ptg*0.01*40)
+            if cur_ptg > percent:
+                print 'Percentage Done: {}%  [{}{}{}]'.format(cur_ptg,'#'*progress, '>','-'*(40-progress))
+                percent = cur_ptg
 
             # load image
             img = image.img_to_array(
