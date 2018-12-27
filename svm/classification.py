@@ -1,34 +1,37 @@
 from preprocess import Preprocess
 import dlib_extractor as dext
-import numpy as np
 from sklearn import svm
-import tensorflow as tf
-import time
+import numpy as np
 import random
+import os
+
+NPY_FILE_DIR = 'features_and_labels/'
 
 pp = Preprocess()
 data_list = pp.filter_noise()
-test_split = 0.2
+train_split = 0.8
+all_classifictions = ['hair_color', 'eyeglasses', 'smiling', 'young','human']
 
-def get_data():
+def get_data(feature_tested):
     global train_list
-    global test_list
-    X, y = dext.extract_features_labels(data_list, 3)
+    global testname_list
+    global truth_list
 
-    train_list = random.sample(range(len(X)),int(test_split*len(X)))
+    if not os.path.exists(NPY_FILE_DIR+'features.npy') or not os.path.exists(NPY_FILE_DIR+feature_tested + '_labels.npy'):
+        dext.extract_features_labels(data_list)
+
+    X, y = dext.load_features_extract_labels(NPY_FILE_DIR+'features.npy', NPY_FILE_DIR+feature_tested + '_labels.npy')
+
+    train_list = random.sample(range(len(X)),int(train_split*len(X)))
     train_list.sort()
     trainname_list = [data_list[x] for x in train_list]
-    print trainname
-    return
-
     test_list = []
-    ptr = 0
     for i in range(len(X)):
-        # print ptr
         if i not in train_list:
             test_list.append(i)
 
     testname_list = [data_list[x] for x in test_list]
+    truth_list = [y[x] for x in test_list]
 
     tr_X = np.array([X[x] for x in train_list])
     tr_Y = np.array([y[x] for x in train_list])
@@ -38,9 +41,7 @@ def get_data():
 
 
 def train_SVM(training_images, training_labels):
-    # X, y = dext.extract_features_labels(data_list)
-    # training_labels = np.array([y[x] for x in train_list])
-    # test_labels = np.array([y[x] for x in test_list])
+    print "Training ... "
     nsamples, nx, ny = training_images.shape
     reshaped_training_images = training_images.reshape((nsamples,nx*ny))
     
@@ -50,7 +51,7 @@ def train_SVM(training_images, training_labels):
     return clf
 
 def test_SVM(clf, test_images, test_labels):
-
+    print "Testing ... "
     nsamples, nx, ny = test_images.shape
     new_test_images = test_images.reshape((nsamples,nx*ny))
     arr = clf.predict(new_test_images)
@@ -60,23 +61,14 @@ def test_SVM(clf, test_images, test_labels):
             count+=1
     return (float(count)/len(test_images))*100, arr
 
+for feature_tested in all_classifictions:
 
-def train_MLP(training_images, training_labels, test_images, test_labels):
+    tr_data,tr_lbl,te_data,te_lbl = get_data(feature_tested)
 
+    # SVM
+    clf = train_SVM(tr_data,tr_lbl)
+    accuracy, arr = test_SVM(clf, te_data, te_lbl)
+    print "SVM Accuracy '{}': {:.2f}%".format(feature_tested,accuracy)
+    pp.save_csv(testname_list, arr, accuracy, 'results/'+feature_tested+"_svm.csv")
 
-    return 0
-
-a,b,c,d = get_data()
-
-
-# SVM
-clf = train_SVM(a,b)
-num, arr = test_SVM(clf, c, d)
-print "SVM Accuracy: {:.2f}%".format(num)
-pp.save_csv(test_list, arr, num, "svm.csv")
-
-
-# # MLP
-# num2 = train_MLP(a,b,c,d)
-# print "MLP Accuracy: {:.2f}%".format(num2)
 
