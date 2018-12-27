@@ -3,12 +3,13 @@ import numpy as np
 from keras.preprocessing import image
 import cv2
 import dlib
+import time
 
 # PATH TO ALL IMAGES
 global basedir, image_paths, target_size
-basedir = './dataset'
-images_dir = os.path.join(basedir,'celeba')
-labels_filename = 'labels.csv'
+basedir = './../AMLS_Assignment_Dataset'
+images_dir = os.path.join(basedir,'dataset')
+labels_filename = 'attribute_list.csv'
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
@@ -90,7 +91,7 @@ def run_dlib_shape(image):
 
     return dlibout, resized_image
 
-def extract_features_labels():
+def extract_features_labels(data_list):
     """
     This funtion extracts the landmarks features for all images in the folder 'dataset/celeba'.
     It also extract the gender label for each image.
@@ -99,16 +100,46 @@ def extract_features_labels():
         gender_labels:      an array containing the gender label (male=0 and female=1) for each image in
                             which a face was detected
     """
+
     image_paths = [os.path.join(images_dir, l) for l in os.listdir(images_dir)]
     target_size = None
     labels_file = open(os.path.join(basedir, labels_filename), 'r')
     lines = labels_file.readlines()
-    gender_labels = {line.split(',')[0] : int(line.split(',')[6]) for line in lines[2:]}
+    hair_color_labels = {line.split(',')[0] : int(line.split(',')[1]) for line in lines[2:]}
+    eyeglasses_labels = {line.split(',')[0] : int(line.split(',')[2]) for line in lines[2:]}
+    smiling_labels = {line.split(',')[0] : int(line.split(',')[3]) for line in lines[2:]}
+    young_labels = {line.split(',')[0] : int(line.split(',')[4]) for line in lines[2:]}
+    human_labels = {line.split(',')[0] : int(line.split(',')[5]) for line in lines[2:]}
     if os.path.isdir(images_dir):
         all_features = []
-        all_labels = []
-        for img_path in image_paths:
-            file_name= img_path.split('.')[1].split('/')[-1]
+        all_hair_color_labels = []
+        all_eyeglasses_labels = []
+        all_smiling_labels = []
+        all_young_labels = []
+        all_human_labels = []
+        count=0
+        percent = 0
+        timeA = time.time()
+        for file_name in data_list:
+            # file_name= img_path.split('.')[-2].split('/')[-1]
+            img_path = os.path.join(basedir, 'dataset',file_name + '.png')
+            
+            # Progress Bar
+            timeB = timeA
+            timeA = time.time()
+            dur_per_count = timeA-timeB
+            eta_str = "ETA: {}s".format(int(dur_per_count*(len(data_list)-count)))
+            count+=1
+            cur_ptg = int(100*count/float(len(data_list)))
+            if len(str(cur_ptg))<3:
+                str_ptg = ' '*(3-len(str(cur_ptg)))+str(cur_ptg)
+            else:
+                str_ptg = cur_ptg
+
+            progress = int(cur_ptg*0.5)
+            if cur_ptg > percent:
+                print 'Percentage Done: {}%  [{}{}{}]  {}'.format(str_ptg,'#'*progress, '>','-'*(50-progress),eta_str)
+                percent = cur_ptg
 
             # load image
             img = image.img_to_array(
@@ -118,9 +149,33 @@ def extract_features_labels():
             features, _ = run_dlib_shape(img)
             if features is not None:
                 all_features.append(features)
-                all_labels.append(gender_labels[file_name])
+                all_hair_color_labels.append(hair_color_labels[file_name])
+                all_eyeglasses_labels.append(eyeglasses_labels[file_name])
+                all_smiling_labels.append(smiling_labels[file_name])
+                all_young_labels.append(young_labels[file_name])
+                all_human_labels.append(human_labels[file_name])
 
     landmark_features = np.array(all_features)
-    gender_labels = (np.array(all_labels) + 1)/2 # simply converts the -1 into 0, so male=0 and female=1
-    return landmark_features, gender_labels
+    hair_color_labels = np.array(all_hair_color_labels) # simply converts the -1 into 0, so male=0 and female=1
+    eyeglasses_labels = np.array(all_eyeglasses_labels)
+    smiling_labels = np.array(all_smiling_labels)
+    young_labels = np.array(all_young_labels)
+    human_labels = np.array(all_human_labels)
 
+    np.save('features', landmark_features)
+    np.save('hair_color_labels', hair_color_labels)
+    np.save('eyeglasses_labels', eyeglasses_labels)
+    np.save('smiling_labels', smiling_labels)
+    np.save('young_labels', young_labels)
+    np.save('human_labels', human_labels)
+
+    return 0
+
+def load_features_extract_labels(features, labels):
+    """
+    Loads the existing npy files for features and labels
+    """
+    landmark_features = np.load(features)
+    gender_labels = np.load(labels)
+    
+    return landmark_features, gender_labels
