@@ -8,7 +8,7 @@ import os
 import pandas as pd
 
 cur_dir = os.path.dirname(os.path.realpath(__file__))
-name = cur_dir + '/models/eyeglasses_1_64_'
+name = cur_dir + '/models/eyeglasses_50_64_'
 feature_tested = 'eyeglasses'
 # load json and create model
 json_file = open(name + 'model.json', 'r')
