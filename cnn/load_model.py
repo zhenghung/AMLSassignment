@@ -8,7 +8,7 @@ import os
 import pandas as pd
 
 cur_dir = os.path.dirname(os.path.realpath(__file__))
-name = cur_dir + '/models/eyeglasses_50_64_'
+name = cur_dir + '/models/eyeglasses_200_128_'
 feature_tested = 'eyeglasses'
 # load json and create model
 json_file = open(name + 'model.json', 'r')
@@ -19,6 +19,10 @@ loaded_model = model_from_json(loaded_model_json)
 loaded_model.load_weights(name + "model.h5")
 print("Loaded model from disk")
  
+loaded_model.summary()
+
+'''
+
 pp = Preprocess()
 train_path = '/home/bryan/AppliedML_Assessment/AMLSassignment/AMLS_Assignment_Dataset/attribute_list_train.csv'
 
@@ -82,3 +86,4 @@ for i in range(len(truth_list)):
         count+=1
 accuracy = count/float(len(truth_list))
 print "Accuracy: {:.2f}%".format(accuracy*100)
+'''
