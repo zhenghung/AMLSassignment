@@ -4,7 +4,8 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
-import matplotlib.pyplot as plt
+from plotting import Plotting
+# import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
@@ -12,22 +13,23 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling','young','human']
 
-EPOCH_SIZE = 1
-INPUT_DIM = 64
-BATCH_SIZE = 1
+EPOCH_SIZE = 10
+INPUT_DIM = 128
+BATCH_SIZE = 32
 TEST_SPLIT = 0.2
 
 class Cnn():
 
-    def __init__(self, feature_tested):
+    def __init__(self, feature_tested, neuron_size):
         self.feature_tested = feature_tested
+        self.neuron_size = neuron_size
         self.multiclass = True
         if feature_tested == 'hair_color':
             # self.multiclass = True
             self.output_dim = 7
         else:
             # self.multiclass = False
-            self.output_dim = 1
+            self.output_dim = 2
 
     def call_preprocess(self):
         print "Preprocessing Dataset.."
@@ -117,19 +119,45 @@ class Cnn():
                         loss="categorical_crossentropy",
                         metrics=["accuracy"])
 
+    def setup_cnn_2_model(self):
+        print "Model setup"
+        self.model = Sequential()
+        self.model.add(Conv2D(32, (3, 3), input_shape=(INPUT_DIM,INPUT_DIM,3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        self.model.add(Conv2D(32, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        self.model.add(Flatten())
+        self.model.add(Dense(self.neuron_size))
+        self.model.add(Activation('relu'))
+        self.model.add(Dropout(0.5))
+        self.model.add(Dense(self.output_dim))
+        self.model.add(Activation('softmax'))
+        self.model.compile(loss='categorical_crossentropy',
+                              optimizer='rmsprop',
+                              metrics=['accuracy'])
+
     def setup_mlp_model(self):
         self.model = Sequential()
         # Dense(64) is a fully-connected layer with 64 hidden units.
         # in the first layer, you must specify the expected input data shape:
         # here, 20-dimensional vectors.
-        # self.model.add(Flatten())
-        self.model.add(Dense(64, activation='relu', input_dim=(INPUT_DIM,)))
-        self.model.add(Dropout(0.5))
-        self.model.add(Dense(64, activation='relu'))
-        self.model.add(Dropout(0.5))
+        self.model.add(Flatten(input_shape=(INPUT_DIM,INPUT_DIM,3)))
+        self.model.add(Dense(128, activation='relu'))
+        # self.model.add(Dropout(0.5))
+        self.model.add(Dense(128, activation='relu'))
+        # self.model.add(Dropout(0.5))
+
         if self.multiclass:
             self.model.add(Dense(self.output_dim, activation='softmax'))
-            sgd = optimizers.SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+            sgd = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
             loss = 'categorical_crossentropy'
             optimizer = sgd
         else:
@@ -148,10 +176,10 @@ class Cnn():
 
         history = self.model.fit_generator(generator=self.train_generator,
                                             steps_per_epoch=STEP_SIZE_TRAIN,
-                                            validation_data=self.valid_generator,
                                             validation_steps=STEP_SIZE_VALID,
+                                            validation_data=self.valid_generator,
                                             epochs=EPOCH_SIZE,
-                                            workers=8
+                                            workers=4
                                             )
         return history
 
@@ -159,20 +187,21 @@ class Cnn():
         print "Model evaluating..."
         generator.reset()
         step_size = generator.n//generator.batch_size
-        scores = self.model.evaluate_generator(generator=generator, verbose = 2, steps=step_size)
+        scores = self.model.evaluate_generator(generator=generator, verbose = 1, steps=step_size)
         print "Loss: ", scores[0]
         print "Accuracy: ",scores[1]
         return scores
+
 
     def saving_model(self):
         # Saving Model
         model_name = "models/{}_{}_{}_".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM)
         # serialize model to JSON
         model_json = self.model.to_json()
-        with open(model_name + "model.json", "w") as json_file:
+        with open(model_name + "model_{}.json".format(self.neuron_size), "w") as json_file:
             json_file.write(model_json)
         # serialize weights to HDF5
-        self.model.save_weights(model_name + "model.h5")
+        self.model.save_weights(model_name + "model_{}.h5".format(self.neuron_size))
         print "Saved model to disk"
 
 
@@ -182,10 +211,10 @@ class Cnn():
         '''
         test_generator.reset()
         step_size = test_generator.n//test_generator.batch_size
-        pred=model.predict_generator(test_generator, verbose=1, steps=step_size)
+        pred=self.model.predict_generator(test_generator, verbose=2, steps=step_size)
         predicted_class_indices=np.argmax(pred,axis=1)
 
-        labels = (train_generator.class_indices)
+        labels = (self.train_generator.class_indices)
         labels = dict((v,k) for k,v in labels.items())
         predictions = [labels[k] for k in predicted_class_indices]
 
@@ -198,11 +227,26 @@ class Cnn():
 
         return results
 
+
+    def manual_check_model(self, results):
+        truth_list = list(self.testdf[self.feature_tested])
+
+        predictions = list(results['Predictions'])
+        count = 0
+        for i in range(len(truth_list)):
+            if truth_list[i] == predictions[i]:
+                count+=1
+        accuracy = count/float(len(truth_list))
+        print "Accuracy: {:.2f}%".format(accuracy*100)
+        return accuracy
+
+
+
     def save_csv(self, dataframe, accuracy):
         # Saving Results into csv
         # csv_file = "results/" + feature_tested + "_" + str(EPOCH_SIZE) + "_" + str(INPUT_DIM) + "_results.csv"
-        csv_fiel = "results/{}_{}_{}_results.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM)
-        results.to_csv(csv_file,index=False)
+        csv_file = "results/{}_{}_{}_results_{}.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM, self.neuron_size)
+        dataframe.to_csv(csv_file,index=False)
 
         file = open(csv_file, 'r')
         data = file.readlines()[1:]
@@ -212,14 +256,30 @@ class Cnn():
 
 
 if __name__=="__main__":
-    cnn = Cnn('human')
-    cnn.call_preprocess()
-    cnn.prepare_generator()
-    cnn.setup_mlp_model()
-    analysis = cnn.train_model()
-    cnn.evaluate_model(cnn.valid_generator)
-    cnn.evaluate_model(cnn.test_generator)
-    dataframe = cnn.predict_model(cnn.test_generator)
+    # for neuron_size in [32,64,128,512]:
+    if True:
+        neuron_size = 128
+        # ALL_CLASSIFICATION =  ['smiling','young','human']
+        for feature in ['eyeglasses']:
+            cnn = Cnn(feature,neuron_size)
+            cnn.call_preprocess()
+            cnn.prepare_generator()
+            
+            cnn.setup_mlp_model()
+            # cnn.setup_cnn_model()
+            # cnn.setup_cnn_2_model()
+
+            history = cnn.train_model()
+            Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.neuron_size, False)
+            cnn.evaluate_model(cnn.valid_generator)
+            # results = cnn.evaluate_model(cnn.test_generator)
+            # cnn.saving_model()
+
+            dataframe = cnn.predict_model(cnn.test_generator)
+            accuracy = cnn.manual_check_model(dataframe)
+            # cnn.save_csv(dataframe, accuracy)
+
+
 
 
 
