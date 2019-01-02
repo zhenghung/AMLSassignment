@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 class Plotting:
     @staticmethod
-    def plot_history(history, directory, epochs_size,feature_tested,neuron_size,save=True):
+    def plot_history(history, directory, epochs_size,feature_tested,neuron_size,save=True, show=False):
         
         fig1, ax1 = plt.subplots()
         ax1.plot(history.history['acc'])
@@ -31,3 +31,5 @@ class Plotting:
         else:
             plt.show(block=False)
 
+        if show:
+            plt.show()

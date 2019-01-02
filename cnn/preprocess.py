@@ -2,9 +2,12 @@ import os
 import random
 import pandas as pd
 from shutil import copy
+import cv2
 
 class Preprocess:
-    def __init__(self):
+    def __init__(self, shuffle, compress):
+        self.shuffle = shuffle
+        self.compress = compress
         current_dir = os.path.dirname(os.path.realpath(__file__))
         self.dataset_dir = os.path.abspath(os.path.join(current_dir, "..", "AMLS_Assignment_Dataset"))
         self.images_dir = os.path.join(self.dataset_dir,'dataset')
@@ -87,18 +90,30 @@ class Preprocess:
 
         for img in os.listdir(self.images_dir):
             img_name = img.split(".")[0]
-            if img_name in train_list:
-                copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "training", img))
-            elif img_name in val_list:
-                copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "validation", img))
-            elif img_name in test_list:
-                copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "testing", img))
+            
+            if self.compress:
+                image = cv2.imread(os.path.join(self.images_dir, img))
+                resized_image = cv2.resize(image, (64,64))
+
+                if img_name in train_list:
+                    cv2.imwrite(os.path.join(self.dataset_dir, "training", img),resized_image)
+                elif img_name in val_list:
+                    cv2.imwrite(os.path.join(self.dataset_dir, "validation", img),resized_image)
+                elif img_name in test_list:
+                    cv2.imwrite(os.path.join(self.dataset_dir, "testing", img),resized_image)
+            else:
+                if img_name in train_list:
+                    copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "training", img))
+                elif img_name in val_list:
+                    copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "validation", img))
+                elif img_name in test_list:
+                    copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "testing", img))
 
         return 0
 
 
 if __name__ == "__main__":        
-    inst = Preprocess()
+    inst = Preprocess(True, True)
     data_list = inst.filter_noise()
     train_list, val_list, test_list = inst.split_train_val_test(data_list, 0.8,0,0.2)
     c = inst.new_csv(train_list, test_list)

@@ -13,27 +13,29 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling','young','human']
 
-EPOCH_SIZE = 10
+EPOCH_SIZE = 100
 INPUT_DIM = 128
 BATCH_SIZE = 32
 TEST_SPLIT = 0.2
 
 class Cnn():
 
-    def __init__(self, feature_tested, neuron_size):
+    def __init__(self, feature_tested, augment, suffix):
         self.feature_tested = feature_tested
-        self.neuron_size = neuron_size
-        self.multiclass = True
+        self.augment = augment
+        self.suffix = suffix
         if feature_tested == 'hair_color':
-            # self.multiclass = True
-            self.output_dim = 7
+            self.multiclass = True
+            self.output_dim = 6
+            self.class_mode = 'categorical'
         else:
-            # self.multiclass = False
-            self.output_dim = 2
+            self.multiclass = False
+            self.output_dim = 1
+            self.class_mode = 'binary'
 
     def call_preprocess(self):
         print "Preprocessing Dataset.."
-        self.pp = Preprocess()
+        self.pp = Preprocess(shuffle=True, compress=True)
         self.noise_free_list = self.pp.filter_noise()
         train_list, val_list, test_list = self.pp.split_train_val_test(self.noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
         self.pp.dir_for_train_val_test(train_list, val_list, test_list)
@@ -41,18 +43,36 @@ class Cnn():
 
         self.traindf = pd.read_csv(train_path, names=['file_name']+ALL_CLASSIFICATION)
         self.testdf = pd.read_csv(test_path, names=['file_name']+ALL_CLASSIFICATION)
-        print self.traindf.head()
+
+        # Filter noise data for hair_color
+        if self.feature_tested == 'hair_color':
+            print "Removing Noise data ..."
+            for file in [self.traindf, self.testdf]:
+                for index, row in file.iterrows():
+                    if row['hair_color'] == -1:
+                        file.drop(index, axis = 0, inplace=True)
+        else:
+            print "Converting for Sigmoid"
+            for file in [self.traindf, self.testdf]:
+                for index, row in file.iterrows():
+                    if row[self.feature_tested] == -1:
+                        file[self.feature_tested][index] = 0
 
     def prepare_generator(self):
-        self.datagen=ImageDataGenerator(rescale=1./255.,
-                                        validation_split=0.25,
-                                        rotation_range=20,
-                                        width_shift_range=0.2,
-                                        height_shift_range=0.2,
-                                        shear_range=0.1,
-                                        zoom_range=0.2,
-                                        horizontal_flip=True,
-                                        fill_mode='nearest')
+        print "Preparing Generators ..."
+
+        if self.augment:
+            self.datagen=ImageDataGenerator(rescale=1./255.,
+                                            validation_split=0.25,
+                                            rotation_range=20,
+                                            width_shift_range=0.2,
+                                            height_shift_range=0.2,
+                                            shear_range=0.1,
+                                            zoom_range=0.2,
+                                            horizontal_flip=True,
+                                            fill_mode='nearest')
+        else:
+            self.datagen=ImageDataGenerator(rescale=1./255., validation_split=0.25)
 
         self.train_generator=self.datagen.flow_from_dataframe(
                         dataframe=self.traindf,
@@ -64,7 +84,7 @@ class Cnn():
                         batch_size=BATCH_SIZE,
                         seed=42,
                         shuffle=True,
-                        class_mode="categorical",
+                        class_mode=self.class_mode,
                         target_size=(INPUT_DIM,INPUT_DIM))
 
         self.valid_generator=self.datagen.flow_from_dataframe(
@@ -77,7 +97,7 @@ class Cnn():
                         batch_size=BATCH_SIZE,
                         seed=42,
                         shuffle=True,
-                        class_mode="categorical",
+                        class_mode=self.class_mode,
                         target_size=(INPUT_DIM,INPUT_DIM))
 
         self.test_datagen=ImageDataGenerator(rescale=1./255.)
@@ -91,20 +111,25 @@ class Cnn():
                         batch_size=1,
                         seed=42,
                         shuffle=False,
-                        class_mode="categorical",
+                        class_mode=self.class_mode,
                         target_size=(INPUT_DIM,INPUT_DIM))
 
     def setup_cnn_model(self):
         print "Model setup"
         self.model = Sequential()
-        self.model.add(Conv2D(32, (3, 3), padding='same',
-                         input_shape=(INPUT_DIM,INPUT_DIM,3)))
+        self.model.add(Conv2D(32, (3, 3), input_shape=(INPUT_DIM,INPUT_DIM,3)))
         self.model.add(Activation('relu'))
         self.model.add(Conv2D(32, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
-        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+        self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
@@ -114,10 +139,16 @@ class Cnn():
         self.model.add(Dense(256))
         self.model.add(Activation('relu'))
         self.model.add(Dropout(0.5))
-        self.model.add(Dense(self.output_dim, activation='softmax'))
-        self.model.compile(optimizers.rmsprop(lr=0.0001, decay=1e-6),
-                        loss="categorical_crossentropy",
-                        metrics=["accuracy"])
+        if self.multiclass:
+            self.model.add(Dense(self.output_dim, activation='softmax'))
+            self.model.compile(optimizers.rmsprop(lr=0.0001, decay=1e-6),
+                            loss="categorical_crossentropy",
+                            metrics=["accuracy"])
+        else:
+            self.model.add(Dense(self.output_dim, activation='sigmoid'))
+            self.model.compile(optimizers.rmsprop(lr=0.0001, decay=1e-6),
+                                loss="binary_crossentropy",
+                                metrics=["accuracy"])
 
     def setup_cnn_2_model(self):
         print "Model setup"
@@ -135,31 +166,35 @@ class Cnn():
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
 
         self.model.add(Flatten())
-        self.model.add(Dense(self.neuron_size))
+        self.model.add(Dense(256))
         self.model.add(Activation('relu'))
         self.model.add(Dropout(0.5))
         self.model.add(Dense(self.output_dim))
-        self.model.add(Activation('softmax'))
-        self.model.compile(loss='categorical_crossentropy',
-                              optimizer='rmsprop',
-                              metrics=['accuracy'])
-
+        if self.multiclass:
+            self.model.add(Activation('softmax'))
+            self.model.compile(loss='categorical_crossentropy',
+                                  optimizer='rmsprop',
+                                  metrics=['accuracy'])
+        else:
+            self.model.add(Activation('sigmoid'))
+            self.model.compile(loss='binary_crossentropy',
+                                  optimizer='rmsprop',
+                                  metrics=['accuracy'])
     def setup_mlp_model(self):
         self.model = Sequential()
-        # Dense(64) is a fully-connected layer with 64 hidden units.
-        # in the first layer, you must specify the expected input data shape:
-        # here, 20-dimensional vectors.
         self.model.add(Flatten(input_shape=(INPUT_DIM,INPUT_DIM,3)))
         self.model.add(Dense(128, activation='relu'))
         # self.model.add(Dropout(0.5))
         self.model.add(Dense(128, activation='relu'))
-        # self.model.add(Dropout(0.5))
+        self.model.add(Dense(128, activation='relu'))
+
+        self.model.add(Dropout(0.5))
 
         if self.multiclass:
             self.model.add(Dense(self.output_dim, activation='softmax'))
-            sgd = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+            # sgd = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
             loss = 'categorical_crossentropy'
-            optimizer = sgd
+            optimizer = optimizers.Adam(lr=0.001)
         else:
             self.model.add(Dense(1, activation='sigmoid'))
             loss = 'binary_crossentropy'
@@ -178,8 +213,8 @@ class Cnn():
                                             steps_per_epoch=STEP_SIZE_TRAIN,
                                             validation_steps=STEP_SIZE_VALID,
                                             validation_data=self.valid_generator,
-                                            epochs=EPOCH_SIZE,
-                                            workers=4
+                                            # workers=4,
+                                            epochs=EPOCH_SIZE
                                             )
         return history
 
@@ -198,10 +233,10 @@ class Cnn():
         model_name = "models/{}_{}_{}_".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM)
         # serialize model to JSON
         model_json = self.model.to_json()
-        with open(model_name + "model_{}.json".format(self.neuron_size), "w") as json_file:
+        with open(model_name + "model_{}.json".format(self.suffix), "w") as json_file:
             json_file.write(model_json)
         # serialize weights to HDF5
-        self.model.save_weights(model_name + "model_{}.h5".format(self.neuron_size))
+        self.model.save_weights(model_name + "model_{}.h5".format(self.suffix))
         print "Saved model to disk"
 
 
@@ -212,15 +247,22 @@ class Cnn():
         test_generator.reset()
         step_size = test_generator.n//test_generator.batch_size
         pred=self.model.predict_generator(test_generator, verbose=2, steps=step_size)
-        predicted_class_indices=np.argmax(pred,axis=1)
+        
+        if self.multiclass:
+            predicted_class_indices=np.argmax(pred,axis=1)        
+        else:
+            predicted_class_indices = []
+            for each in pred:
+                if each[0] > 0.5:
+                    predicted_class_indices.append(1)
+                else:
+                    predicted_class_indices.append(0)
 
         labels = (self.train_generator.class_indices)
         labels = dict((v,k) for k,v in labels.items())
         predictions = [labels[k] for k in predicted_class_indices]
 
-        filenames=test_generator.filenames
-
-        filenames = [int(x.split(".")[0]) for x in filenames]
+        filenames=[name.zfill(10) for name in test_generator.filenames]
         results=pd.DataFrame({"Filename":filenames,
                               "Predictions":predictions})
         results = results.sort_values('Filename')
@@ -245,7 +287,7 @@ class Cnn():
     def save_csv(self, dataframe, accuracy):
         # Saving Results into csv
         # csv_file = "results/" + feature_tested + "_" + str(EPOCH_SIZE) + "_" + str(INPUT_DIM) + "_results.csv"
-        csv_file = "results/{}_{}_{}_results_{}.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM, self.neuron_size)
+        csv_file = "results/{}_{}_{}_results_{}.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM, self.suffix)
         dataframe.to_csv(csv_file,index=False)
 
         file = open(csv_file, 'r')
@@ -256,30 +298,29 @@ class Cnn():
 
 
 if __name__=="__main__":
-    # for neuron_size in [32,64,128,512]:
-    if True:
-        neuron_size = 128
-        # ALL_CLASSIFICATION =  ['smiling','young','human']
-        for feature in ['eyeglasses']:
-            cnn = Cnn(feature,neuron_size)
-            cnn.call_preprocess()
-            cnn.prepare_generator()
-            
-            cnn.setup_mlp_model()
-            # cnn.setup_cnn_model()
-            # cnn.setup_cnn_2_model()
 
-            history = cnn.train_model()
-            Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.neuron_size, False)
-            cnn.evaluate_model(cnn.valid_generator)
-            # results = cnn.evaluate_model(cnn.test_generator)
-            # cnn.saving_model()
+    for feature in ALL_CLASSIFICATION:
 
-            dataframe = cnn.predict_model(cnn.test_generator)
-            accuracy = cnn.manual_check_model(dataframe)
-            # cnn.save_csv(dataframe, accuracy)
+        cnn = Cnn(feature, augment=False, suffix='MLP')
+        cnn.call_preprocess()
+        cnn.prepare_generator()
+        
+        cnn.setup_mlp_model()
+        # cnn.setup_cnn_model()
+        cnn.model.summary()
+        # cnn.setup_cnn_2_model()
 
+        history = cnn.train_model()
+        Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
+        cnn.evaluate_model(cnn.valid_generator)
+        # # results = cnn.evaluate_model(cnn.test_generator)
+        cnn.saving_model()
 
+        dataframe = cnn.predict_model(cnn.test_generator)
+        accuracy = cnn.manual_check_model(dataframe)
+        cnn.save_csv(dataframe, accuracy)
+
+        
 
 
 
