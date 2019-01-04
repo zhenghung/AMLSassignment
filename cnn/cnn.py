@@ -280,7 +280,7 @@ if __name__ == "__main__":
 
     for feature in ALL_CLASSIFICATION:
     # for feature in ['eyeglasses', 'smiling', 'young', 'human']:
-        cnn = Cnn(feature, augment=False, suffix='cnn_augmented')
+        cnn = Cnn(feature, augment=True, suffix='cnn_augmented')
         cnn.call_preprocess(shuffle=True, compress=False)
         cnn.prepare_generator()
         

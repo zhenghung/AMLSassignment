@@ -5,14 +5,10 @@ from shutil import copy
 
 
 class Preprocess:
-<<<<<<< HEAD:tools/preprocess.py
 
     def __init__(self, shuffle, compress):
         self.shuffle = shuffle
         self.compress = compress
-=======
-    def __init__(self):
->>>>>>> parent of bf51e95... Sigmoid added for binary, remove noise for hair_color, suffix param, data augmentation param:cnn/preprocess.py
         current_dir = os.path.dirname(os.path.realpath(__file__))
         self.dataset_dir = os.path.abspath(os.path.join(current_dir, "..", "AMLS_Assignment_Dataset"))
         self.images_dir = os.path.join(self.dataset_dir,'dataset')
