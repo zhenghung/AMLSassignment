@@ -4,8 +4,8 @@ from keras.preprocessing import image
 import cv2
 import dlib
 import time
-
-# PATH TO ALL IMAGES
+import cv2
+import matplotlib.pyplot as plt
 global basedir, image_paths, target_size
 basedir = './../AMLS_Assignment_Dataset'
 images_dir = os.path.join(basedir,'dataset')
@@ -91,6 +91,28 @@ def run_dlib_shape(image):
 
     return dlibout, resized_image
 
+def extract_edges(img_path):
+    image = cv2.imread(img_path)
+    img = cv2.resize(image, (32, 32))
+    edges = cv2.Canny(img, img.shape[0], img.shape[1])
+
+    plt.subplot(121), plt.imshow(img, cmap='gray')
+    plt.title('Original Image'), plt.xticks([]), plt.yticks([])
+    plt.subplot(122), plt.imshow(edges, cmap='gray')
+    plt.title('Edge Image'), plt.xticks([]), plt.yticks([])
+
+    plt.show()
+
+    coordinates = []
+    for row in range(len(edges)):
+        for column in range(len(edges[0])):
+            if edges[row][column] == 255:
+                coordinates.append([row, column])
+
+    print len(coordinates)
+    return coordinates
+
+
 def extract_features_labels(data_list):
     """
     This funtion extracts the landmarks features for all images in the folder 'dataset/celeba'.
@@ -110,14 +132,16 @@ def extract_features_labels(data_list):
     smiling_labels = {line.split(',')[0] : int(line.split(',')[3]) for line in lines[2:]}
     young_labels = {line.split(',')[0] : int(line.split(',')[4]) for line in lines[2:]}
     human_labels = {line.split(',')[0] : int(line.split(',')[5]) for line in lines[2:]}
+
+    all_features = []
+    all_images = []
+    all_hair_color_labels = []
+    all_eyeglasses_labels = []
+    all_smiling_labels = []
+    all_young_labels = []
+    all_human_labels = []
+
     if os.path.isdir(images_dir):
-        all_features = []
-        all_images = []
-        all_hair_color_labels = []
-        all_eyeglasses_labels = []
-        all_smiling_labels = []
-        all_young_labels = []
-        all_human_labels = []
         count=0
         percent = 0
         timeA = time.time()
@@ -147,16 +171,18 @@ def extract_features_labels(data_list):
                 image.load_img(img_path,
                                target_size=None,
                                interpolation='bicubic'))
-
             features, _ = run_dlib_shape(img)
-            
-            img = image.img_to_array(
-                image.load_img(img_path,
-                               target_size=target_size,
-                               interpolation='bicubic'))
+
+            # edges = extract_edges(img_path)
+
+
+            # img = image.img_to_array(
+            #     image.load_img(img_path,
+            #                    target_size=target_size,
+            #                    interpolation='bicubic'))
             if features is not None:
                 all_features.append(features)
-                all_images.append(img)
+                # all_images.append(img)
                 all_hair_color_labels.append(hair_color_labels[file_name])
                 all_eyeglasses_labels.append(eyeglasses_labels[file_name])
                 all_smiling_labels.append(smiling_labels[file_name])
@@ -164,7 +190,7 @@ def extract_features_labels(data_list):
                 all_human_labels.append(human_labels[file_name])
 
     landmark_features = np.array(all_features)
-    ds_images = np.array(all_images)
+    # ds_images = np.array(all_images)
     hair_color_labels = np.array(all_hair_color_labels) # simply converts the -1 into 0, so male=0 and female=1
     eyeglasses_labels = np.array(all_eyeglasses_labels)
     smiling_labels = np.array(all_smiling_labels)
@@ -173,7 +199,7 @@ def extract_features_labels(data_list):
 
     NPY_FILE_DIR = 'features_and_labels/'
     np.save(NPY_FILE_DIR+'face_features', landmark_features)
-    np.save(NPY_FILE_DIR+'ds_images', ds_images)
+    # np.save(NPY_FILE_DIR+'ds_images', ds_images)
     np.save(NPY_FILE_DIR+'hair_color_labels', hair_color_labels)
     np.save(NPY_FILE_DIR+'eyeglasses_labels', eyeglasses_labels)
     np.save(NPY_FILE_DIR+'smiling_labels', smiling_labels)

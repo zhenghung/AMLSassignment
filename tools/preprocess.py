@@ -3,8 +3,16 @@ import random
 import pandas as pd
 from shutil import copy
 
+
 class Preprocess:
+<<<<<<< HEAD:tools/preprocess.py
+
+    def __init__(self, shuffle, compress):
+        self.shuffle = shuffle
+        self.compress = compress
+=======
     def __init__(self):
+>>>>>>> parent of bf51e95... Sigmoid added for binary, remove noise for hair_color, suffix param, data augmentation param:cnn/preprocess.py
         current_dir = os.path.dirname(os.path.realpath(__file__))
         self.dataset_dir = os.path.abspath(os.path.join(current_dir, "..", "AMLS_Assignment_Dataset"))
         self.images_dir = os.path.join(self.dataset_dir,'dataset')
@@ -23,9 +31,6 @@ class Preprocess:
             for key in specified_labels:
                 if specified_labels[key] != [-1, -1, -1, -1, -1]:
                     real_data.append(key)
-            int_list = [int(x) for x in real_data]
-            int_list.sort()
-            real_data = [str(x) for x in int_list]
         else:
             print "Labels Path not valid: ", 
             print self.labels_path
@@ -98,16 +103,6 @@ class Preprocess:
                 copy(os.path.join(self.images_dir, img), os.path.join(self.dataset_dir, "testing", img))
 
         return 0
-
-    def save_csv(self, filenames, predictions, accuracy, csv_file):
-        df = pd.DataFrame({"Filename":filenames,
-                            "Predictions":predictions})
-        df.to_csv(csv_file,index=False)
-        file = open(csv_file, 'r')
-        data = file.readlines()[1:]
-        data.insert(0, '{},,\n'.format(accuracy))
-        file = open(csv_file, 'w')
-        file.writelines(data)
 
 
 if __name__ == "__main__":        

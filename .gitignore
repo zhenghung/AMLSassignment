@@ -1,4 +1,6 @@
 *pyc
 /AMLS_Assignment_Dataset/*
 *h5
-
+/cnn/models/*
+/venv/*
+.idea
