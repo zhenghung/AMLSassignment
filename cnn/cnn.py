@@ -1,20 +1,22 @@
-from tools.preprocess import Preprocess
-from tools.utils import Utilities as uti
 from keras.callbacks import EarlyStopping
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
-from plotting import Plotting
 import pandas as pd
 import numpy as np
 import os
+
+from tools.preprocess import Preprocess
+from tools.utils import Utilities as uti
+from tools.plotting import Plotting
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling', 'young', 'human']
 
-EPOCH_SIZE = 50
+EPOCH_SIZE = 1
 INPUT_DIM = 256
 BATCH_SIZE = 32
 TEST_SPLIT = 0.2
