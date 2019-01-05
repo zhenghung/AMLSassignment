@@ -1,182 +1,312 @@
-from preprocess import Preprocess
+from keras.callbacks import EarlyStopping
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
+from tools.preprocess import Preprocess
+from tools.utils import Utilities as uti
+from tools.plotting import Plotting
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling', 'young', 'human']
+
+EPOCH_SIZE = 50
+INPUT_DIM = 256
+BATCH_SIZE = 32
+TEST_SPLIT = 0.2
 
 
-input_dim = 64
-epochs_size = 50
-feature_tested = 'eyeglasses'
-if feature_tested == 'hair_color':
-    output_dim = 7
-else:
-    output_dim = 2
+class Cnn:
 
-print "Preprocessing Dataset.."
-pp = Preprocess()
-noise_free_list = pp.filter_noise()
-train_list, val_list, test_list = pp.split_train_val_test(noise_free_list, 0.8,0,0.2)
-pp.dir_for_train_val_test(train_list, val_list, test_list)
-train_path, test_path = pp.new_csv(train_list, test_list)
+    def __init__(self, feature_tested, augment, suffix):
+        self.feature_tested = feature_tested
+        self.augment = augment
+        self.suffix = suffix
+        if feature_tested == 'hair_color':
+            self.multiclass = True
+            self.output_dim = 6
+            self.class_mode = 'categorical'
+        else:
+            self.multiclass = False
+            self.output_dim = 1
+            self.class_mode = 'binary'
 
-traindf = pd.read_csv(train_path, names=['file_name','hair_color','eyeglasses','smiling','young','human'])
-testdf = pd.read_csv(test_path, names=['file_name','hair_color','eyeglasses','smiling','young','human'])
-print traindf.head()
+        # Define instance variables
+        self.pp = None
+        self.traindf = None
+        self.testdf = None
+        self.datagen = None
+        self.train_generator = None
+        self.valid_generator = None
+        self.test_datagen = None
+        self.test_generator = None
+        self.model = None
 
-print "Preparing Generators.."
-datagen=ImageDataGenerator(rescale=1./255.,validation_split=0.25)
+    def call_preprocess(self, shuffle, compress):
+        print "Preprocessing Dataset.."
+        self.pp = Preprocess(shuffle=shuffle, compress=compress)
+        noise_free_list = self.pp.filter_noise()
+        train_list, val_list, test_list = self.pp.split_train_val_test(noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
+        self.pp.dir_for_train_val_test(train_list, val_list, test_list)
+        train_path, test_path = self.pp.new_csv(train_list, test_list)
 
-train_generator=datagen.flow_from_dataframe(
-                dataframe=traindf,
-                directory=os.path.join(pp.dataset_dir, 'training'),
-                x_col="file_name",
-                y_col=feature_tested,
-                has_ext=False,                                     
-                subset="training",
-                batch_size=32,
-                seed=42,
-                shuffle=True,
-                class_mode="categorical",
-                target_size=(input_dim,input_dim))
+        self.traindf = pd.read_csv(train_path, names=['file_name']+ALL_CLASSIFICATION)
+        self.testdf = pd.read_csv(test_path, names=['file_name']+ALL_CLASSIFICATION)
 
-valid_generator=datagen.flow_from_dataframe(
-                dataframe=traindf,
-                directory=os.path.join(pp.dataset_dir, 'training'),
-                x_col="file_name",
-                y_col=feature_tested,
-                has_ext=False,
-                subset="validation",
-                batch_size=32,
-                seed=42,
-                shuffle=True,
-                class_mode="categorical",
-                target_size=(input_dim,input_dim))
+        # Filter noise data for hair_color
+        if self.feature_tested == 'hair_color':
+            print "Removing Noise data ..."
+            for frame in [self.traindf, self.testdf]:
+                for index, row in frame.iterrows():
+                    if row['hair_color'] == -1:
+                        frame.drop(index, axis=0, inplace=True)
+        else:
+            print "Converting for Sigmoid"
+            for frame in [self.traindf, self.testdf]:
+                for index, row in frame.iterrows():
+                    if row[self.feature_tested] == -1:
+                        frame[self.feature_tested][index] = 0
 
-test_datagen=ImageDataGenerator(rescale=1./255.)
+    def prepare_generator(self):
+        print "Preparing Generators ..."
 
-test_generator=test_datagen.flow_from_dataframe(
-                dataframe=testdf,
-                directory=os.path.join(pp.dataset_dir, 'testing'),
-                x_col="file_name",
-                y_col=None,
-                has_ext=False,
-                batch_size=1,
-                seed=42,
-                shuffle=False,
-                class_mode=None,
-                target_size=(input_dim,input_dim))
+        if self.augment:
+            self.datagen = ImageDataGenerator(rescale=1./255.,
+                                              validation_split=0.25,
+                                              rotation_range=10,
+                                              # width_shift_range=0.2,
+                                              # height_shift_range=0.2,
+                                              # shear_range=0.1,
+                                              zoom_range=0.2,
+                                              horizontal_flip=True,
+                                              fill_mode='nearest')
+        else:
+            self.datagen = ImageDataGenerator(rescale=1./255., validation_split=0.25)
 
-print "Model setup"
-model = Sequential()
-model.add(Conv2D(64, (3, 3), padding='same',
-                 input_shape=(input_dim,input_dim,3)))
-model.add(Activation('relu'))
-model.add(Conv2D(32, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Dropout(0.25))
-model.add(Conv2D(64, (3, 3), padding='same'))
-model.add(Activation('relu'))
-model.add(Conv2D(64, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Dropout(0.25))
-model.add(Flatten())
-model.add(Dense(32))
-model.add(Activation('relu'))
-model.add(Dropout(0.5))
-model.add(Dense(output_dim, activation='softmax'))
-model.compile(optimizers.rmsprop(lr=0.0001, decay=1e-6),loss="categorical_crossentropy",metrics=["accuracy"])
+        self.train_generator = self.datagen.flow_from_dataframe(dataframe=self.traindf,
+                                                                directory=os.path.join(self.pp.dataset_dir, 'training'),
+                                                                x_col="file_name",
+                                                                y_col=self.feature_tested,
+                                                                has_ext=False,
+                                                                subset="training",
+                                                                batch_size=BATCH_SIZE,
+                                                                seed=42,
+                                                                shuffle=True,
+                                                                class_mode=self.class_mode,
+                                                                target_size=(INPUT_DIM, INPUT_DIM))
 
-print "Model fitting..."
-STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
-STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
-STEP_SIZE_TEST=test_generator.n//test_generator.batch_size
+        self.valid_generator = self.datagen.flow_from_dataframe(dataframe=self.traindf,
+                                                                directory=os.path.join(self.pp.dataset_dir, 'training'),
+                                                                x_col="file_name",
+                                                                y_col=self.feature_tested,
+                                                                has_ext=False,
+                                                                subset="validation",
+                                                                batch_size=BATCH_SIZE,
+                                                                seed=42,
+                                                                shuffle=True,
+                                                                class_mode=self.class_mode,
+                                                                target_size=(INPUT_DIM, INPUT_DIM))
 
-history = model.fit_generator(generator=train_generator,
-                                steps_per_epoch=STEP_SIZE_TRAIN,
-                                validation_data=valid_generator,
-                                validation_steps=STEP_SIZE_VALID,
-                                epochs=epochs_size,
-                                workers=4
-                                )
+        self.test_datagen = ImageDataGenerator(rescale=1./255.)
 
-print "Plotting"
-# list all data in history
-print(history.history.keys())
-# summarize history for accuracy
-plt.plot(history.history['acc'])
-plt.plot(history.history['val_acc'])
-plt.title('model accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper right')
-plt.show(block=False)
-# summarize history for loss
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='bottom right')
-plt.show(block=False)
+        self.test_generator = self.test_datagen.flow_from_dataframe(dataframe=self.testdf,
+                                                                    directory=os.path.join(self.pp.dataset_dir, 'testing'),
+                                                                    x_col="file_name",
+                                                                    y_col=self.feature_tested,
+                                                                    has_ext=False,
+                                                                    batch_size=1,
+                                                                    seed=42,
+                                                                    shuffle=False,
+                                                                    class_mode=self.class_mode,
+                                                                    target_size=(INPUT_DIM, INPUT_DIM))
+
+    def setup_cnn_model(self):
+        print "{} Model setup".format(self.feature_tested)
+        self.model = Sequential()
+        self.model.add(Conv2D(32, (3, 3), input_shape=(INPUT_DIM, INPUT_DIM, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(32, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Flatten())
+        self.model.add(Dense(256))
+        self.model.add(Activation('relu'))
+
+        self.model.add(Dropout(0.5))
+        self.model.add(Dense(256))
+        self.model.add(Activation('relu'))
+        self.model.add(Dropout(0.5))
+        
+        # optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        # optimizer = optimizers.Adam(lr=0.0001)
+        optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
+        # optimizer = optimizers.Adagrad(lr=0.001, epsilon=None, decay=0.0)
+
+        if self.multiclass:
+            self.model.add(Dense(self.output_dim, activation='softmax'))
+            loss = 'categorical_crossentropy'
+        else:
+            self.model.add(Dense(self.output_dim, activation='sigmoid'))
+            loss = 'binary_crossentropy'
+            
+        self.model.compile(optimizer, loss=loss, metrics=["accuracy"])
+
+    def setup_mlp_model(self):
+        self.model = Sequential()
+        self.model.add(Flatten(input_shape=(INPUT_DIM, INPUT_DIM, 3)))
+        self.model.add(Dense(256, activation='relu'))
+        self.model.add(Dropout(0.5))
+        self.model.add(Dense(256, activation='relu'))
+        self.model.add(Dropout(0.5))
+        self.model.add(Dense(256, activation='relu'))
+        self.model.add(Dropout(0.5))
+
+        optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        # optimizer = optimizers.Adam(lr=0.0001)
+        # optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
+        # optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+
+        if self.multiclass:
+            self.model.add(Dense(self.output_dim, activation='softmax'))
+            loss = 'categorical_crossentropy'
+        else:
+            self.model.add(Dense(self.output_dim, activation='sigmoid'))
+            loss = 'binary_crossentropy'
+
+        self.model.compile(loss=loss,
+                           optimizer=optimizer,
+                           metrics=['accuracy'])
+
+    def train_model(self):
+        print "{} Model fitting...".format(self.feature_tested)
+        STEP_SIZE_TRAIN = self.train_generator.n//self.train_generator.batch_size
+        STEP_SIZE_VALID = self.valid_generator.n//self.valid_generator.batch_size
+
+        early_stopping = [EarlyStopping(monitor='val_loss',
+                                        min_delta=0,
+                                        patience=5,
+                                        verbose=0,
+                                        mode='min',
+                                        restore_best_weights=True)]
+
+        analysis = self.model.fit_generator(generator=self.train_generator,
+                                            steps_per_epoch=STEP_SIZE_TRAIN,
+                                            validation_steps=STEP_SIZE_VALID,
+                                            validation_data=self.valid_generator,
+                                            callbacks=early_stopping,
+                                            verbose=2,
+                                            workers=4,
+                                            epochs=EPOCH_SIZE)
+        return analysis
+
+    def evaluate_model(self, generator):
+        print "{} Model evaluating...".format(self.feature_tested)
+        generator.reset()
+        step_size = generator.n//generator.batch_size
+        scores = self.model.evaluate_generator(generator=generator, verbose=1, steps=step_size)
+        print "Loss: ", scores[0]
+        print "Accuracy: ", scores[1]
+        return scores
+
+    def saving_model(self):
+        # Saving Model
+        model_name = "models/{}_{}_{}_".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM)
+        # serialize model to JSON
+        model_json = self.model.to_json()
+        with open(model_name + "model_{}.json".format(self.suffix), "w") as json_file:
+            json_file.write(model_json)
+        # serialize weights to HDF5
+        self.model.save_weights(model_name + "model_{}.h5".format(self.suffix))
+        print "Saved model to disk"
+
+    def predict_model(self, test_generator):
+        # Predicts the output of the testing images and returns the dataframe with the output
+        test_generator.reset()
+        step_size = test_generator.n//test_generator.batch_size
+        pred = self.model.predict_generator(test_generator, verbose=2, steps=step_size)
+        
+        if self.multiclass:
+            predicted_class_indices = np.argmax(pred,axis=1)
+        else:
+            predicted_class_indices = []
+            for each in pred:
+                if each[0] > 0.5:
+                    predicted_class_indices.append(1)
+                else:
+                    predicted_class_indices.append(0)
+
+        labels = self.train_generator.class_indices
+        labels = dict((v, k) for k, v in labels.items())
+        predictions = [labels[k] for k in predicted_class_indices]
+
+        results = uti.to_dataframe(test_generator.filenames, predictions)
+
+        return results
+
+    def manual_check_model(self, results):
+        truth_list = list(self.testdf[self.feature_tested])
+
+        predictions = list(results['Predictions'])
+        count = 0
+        for i in range(len(truth_list)):
+            if truth_list[i] == predictions[i]:
+                count += 1
+        accuracy = count/float(len(truth_list))
+        print "Accuracy: {:.2f}%".format(accuracy*100)
+        return accuracy
+
+    def save_csv(self, dataframe, accuracy):
+        # Saving Results into csv
+        csv_file = "results/{}_{}_{}_results_{}.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM, self.suffix)
+        dataframe.to_csv(csv_file,index=False)
+
+        data = open(csv_file, 'r').readlines()[1:]
+        data.insert(0, '{},,\n'.format(accuracy))
+        open(csv_file, 'w').writelines(data)
 
 
+if __name__ == "__main__":
 
-print "Model evaluating..."
-scores = model.evaluate_generator(generator=valid_generator,steps=STEP_SIZE_VALID)
-print "Accuracy = ",scores[1]
+    # for feature in ALL_CLASSIFICATION:
 
-model_name = "models/" + feature_tested + "_" + str(epochs_size) + "_" + str(input_dim) + "_"
-# serialize model to JSON
-model_json = model.to_json()
-with open(model_name + "model.json", "w") as json_file:
-    json_file.write(model_json)
-# serialize weights to HDF5
-model.save_weights(model_name + "model.h5")
-print("Saved model to disk")
+    # for feature in ['eyeglasses', 'smiling', 'young', 'human']:
+    for feature in ['human']:
+        cnn = Cnn(feature, augment=False, suffix='mlp_no_aug_3layer_sgd')
+        cnn.call_preprocess(shuffle=True, compress=False)
+        cnn.prepare_generator()
+        
+        cnn.setup_mlp_model()
+        # cnn.setup_cnn_model()
+        cnn.model.summary()
 
+        history = cnn.train_model()
+        Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
+        cnn.evaluate_model(cnn.valid_generator)
+        # # results = cnn.evaluate_model(cnn.test_generator)
+        # cnn.saving_model()
 
-print "Model testing..."
-test_generator.reset()
-pred=model.predict_generator(test_generator,verbose=1, steps=STEP_SIZE_TEST)
-predicted_class_indices=np.argmax(pred,axis=1)
-
-labels = (train_generator.class_indices)
-labels = dict((v,k) for k,v in labels.items())
-predictions = [labels[k] for k in predicted_class_indices]
-
-filenames=test_generator.filenames
-
-filenames = [int(x.split(".")[0]) for x in filenames]
-results=pd.DataFrame({"Filename":filenames,
-                      "Predictions":predictions})
-results = results.sort_values('Filename')
-
-truth_list = list(testdf[feature_tested])
-
-predictions = list(results['Predictions'])
-count = 0
-for i in range(len(truth_list)):
-    if truth_list[i] == predictions[i]:
-        count+=1
-accuracy = count/float(len(truth_list))
-print "Accuracy: {:.2f}%".format(accuracy*100)
-
-csv_file = "results/" + feature_tested + "_" + str(epochs_size) + "_" + str(input_dim) + "_results.csv"
-results.to_csv(csv_file,index=False)
-
-file = open(csv_file, 'r')
-data = file.readlines()[1:]
-data.insert(0, '{},,\n'.format(accuracy))
-file = open(csv_file, 'w')
-file.writelines(data)
-
-plt.show()
+        dataframe = cnn.predict_model(cnn.test_generator)
+        accuracy = cnn.manual_check_model(dataframe)
+        uti.save_csv(dataframe, accuracy, "{}_{}_{}_results_{}".format(cnn.feature_tested, EPOCH_SIZE, INPUT_DIM, cnn.suffix))
