@@ -16,7 +16,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling', 'young', 'human']
 
-EPOCH_SIZE = 1
+EPOCH_SIZE = 50
 INPUT_DIM = 256
 BATCH_SIZE = 32
 TEST_SPLIT = 0.2
@@ -79,7 +79,7 @@ class Cnn:
         if self.augment:
             self.datagen = ImageDataGenerator(rescale=1./255.,
                                               validation_split=0.25,
-                                              rotation_range=20,
+                                              rotation_range=10,
                                               # width_shift_range=0.2,
                                               # height_shift_range=0.2,
                                               # shear_range=0.1,
@@ -135,19 +135,26 @@ class Cnn:
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
+
         self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
+
         self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(Conv2D(64, (3, 3)))
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
+
         self.model.add(Flatten())
+        self.model.add(Dense(256))
+        self.model.add(Activation('relu'))
+
+        self.model.add(Dropout(0.5))
         self.model.add(Dense(256))
         self.model.add(Activation('relu'))
         self.model.add(Dropout(0.5))
@@ -172,14 +179,14 @@ class Cnn:
         self.model.add(Dense(256, activation='relu'))
         self.model.add(Dropout(0.5))
         self.model.add(Dense(256, activation='relu'))
-        # self.model.add(Dense(64, activation='relu'))
-
+        self.model.add(Dropout(0.5))
+        self.model.add(Dense(256, activation='relu'))
         self.model.add(Dropout(0.5))
 
-        # optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
         # optimizer = optimizers.Adam(lr=0.0001)
         # optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
-        optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+        # optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
 
         if self.multiclass:
             self.model.add(Dense(self.output_dim, activation='softmax'))
@@ -199,15 +206,17 @@ class Cnn:
 
         early_stopping = [EarlyStopping(monitor='val_loss',
                                         min_delta=0,
-                                        patience=2,
-                                        verbose=0, mode='auto')]
+                                        patience=5,
+                                        verbose=0,
+                                        mode='min',
+                                        restore_best_weights=True)]
 
         analysis = self.model.fit_generator(generator=self.train_generator,
                                             steps_per_epoch=STEP_SIZE_TRAIN,
                                             validation_steps=STEP_SIZE_VALID,
                                             validation_data=self.valid_generator,
                                             callbacks=early_stopping,
-                                            verbose=1,
+                                            verbose=2,
                                             workers=4,
                                             epochs=EPOCH_SIZE)
         return analysis
@@ -280,21 +289,23 @@ class Cnn:
 
 if __name__ == "__main__":
 
-    for feature in ALL_CLASSIFICATION:
+    # for feature in ALL_CLASSIFICATION:
+
     # for feature in ['eyeglasses', 'smiling', 'young', 'human']:
-        cnn = Cnn(feature, augment=True, suffix='cnn_augmented')
+    for feature in ['human']:
+        cnn = Cnn(feature, augment=False, suffix='mlp_no_aug_3layer_sgd')
         cnn.call_preprocess(shuffle=True, compress=False)
         cnn.prepare_generator()
         
-        # cnn.setup_mlp_model()
-        cnn.setup_cnn_model()
+        cnn.setup_mlp_model()
+        # cnn.setup_cnn_model()
         cnn.model.summary()
 
         history = cnn.train_model()
         Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
         cnn.evaluate_model(cnn.valid_generator)
         # # results = cnn.evaluate_model(cnn.test_generator)
-        cnn.saving_model()
+        # cnn.saving_model()
 
         dataframe = cnn.predict_model(cnn.test_generator)
         accuracy = cnn.manual_check_model(dataframe)
