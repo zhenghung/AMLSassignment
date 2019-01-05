@@ -8,7 +8,7 @@ import cv2
 import matplotlib.pyplot as plt
 global basedir, image_paths, target_size
 basedir = './../AMLS_Assignment_Dataset'
-images_dir = os.path.join(basedir,'dataset')
+images_dir = os.path.join(basedir, 'dataset')
 labels_filename = 'attribute_list.csv'
 
 detector = dlib.get_frontal_face_detector()
