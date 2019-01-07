@@ -2,24 +2,29 @@ from keras.applications.vgg16 import VGG16
 from keras.preprocessing import image
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.vgg16 import preprocess_input
+from keras.applications.mobilenet_v2 import MobileNetV2
 from keras.layers import Input, Flatten, Dense
 from keras.models import Model
-from preprocess import Preprocess
+from tools.preprocess import Preprocess
 import numpy as np
 import pandas as pd
-from plotting import Plotting
+from tools.plotting import Plotting
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 #Get back the convolutional part of a VGG network trained on ImageNet
-model_vgg16_conv = VGG16(weights='imagenet', include_top=False, input_shape=(64,64,3))
-model_vgg16_conv.summary()
+# model_vgg16_conv = VGG16(weights='imagenet', include_top=False, input_shape=(64,64,3))
+# model_vgg16_conv.summary()
+
+model_mobilenetv2 = MobileNetV2(input_shape=None, alpha=1.0, depth_multiplier=1, include_top=True, weights=None, input_tensor=None, pooling=None, classes=1)
+model_mobilenetv2.summary()
+
 
 #Create your own input format (here 3x200x200)
-input = Input(shape=(32,32,3),name = 'image_input')
+# input = Input(shape=(224,32,3),name = 'image_input')
 
 #Use the generated model 
-output_vgg16_conv = model_vgg16_conv(input)
+# output_vgg16_conv = model_vgg16_conv(input)
 
 #Add the fully-connected layers 
 x = Flatten(name='flatten')(output_vgg16_conv)
