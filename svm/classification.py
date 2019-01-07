@@ -65,17 +65,7 @@ class SvmClassification:
 
     @staticmethod
     def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None, n_jobs=None, train_sizes=np.linspace(.1, 1.0, 10)):
-        """
-        :param estimator: s
-        :param title:
-        :param X:
-        :param y:
-        :param ylim:
-        :param cv:
-        :param n_jobs:
-        :param train_sizes:
-        :return: plot of the learning curve
-        """
+
         plt.figure()
         plt.title(title)
         if ylim is not None:

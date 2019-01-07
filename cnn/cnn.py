@@ -131,6 +131,17 @@ class Cnn:
                                                                     class_mode=self.class_mode,
                                                                     target_size=(INPUT_DIM, INPUT_DIM))
 
+    def custom_test_dataset(self, directory):
+        self.test_datagen = ImageDataGenerator(rescale=1. / 255.)
+        self.test_generator = self.test_datagen.flow_from_directory(directory=directory,
+                                                                    target_size=(256, 256),
+                                                                    color_mode="rgb",
+                                                                    class_mode=None,
+                                                                    batch_size=1,
+                                                                    shuffle=False,
+                                                                    seed=42,
+                                                                    )
+
     def setup_cnn_model(self, opt):
         print "{} Model setup".format(self.feature_tested)
         self.model = Sequential()
@@ -186,9 +197,9 @@ class Cnn:
         self.model = Sequential()
         self.model.add(Flatten(input_shape=(INPUT_DIM, INPUT_DIM, 3)))
         self.model.add(Dense(128, activation='relu'))
-        # self.model.add(Dropout(0.5))
+        self.model.add(Dropout(0.1))
         self.model.add(Dense(128, activation='relu'))
-        # self.model.add(Dropout(0.5))
+        self.model.add(Dropout(0.1))
 
         if opt == 'sgd':
             optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
@@ -313,7 +324,7 @@ class Cnn:
                                             validation_steps=STEP_SIZE_VALID,
                                             validation_data=self.valid_generator,
                                             callbacks=early_stopping,
-                                            verbose=2,
+                                            verbose=1,
                                             workers=4,
                                             class_weight=weights_dict,
                                             epochs=EPOCH_SIZE)
@@ -398,28 +409,26 @@ class Cnn:
 
 if __name__ == "__main__":
 
-    # for feature in ALL_CLASSIFICATION:
-    # for opt in ['rmsprop','sgd','adagrad','adadelta','adamax']:
-    for opt in ['adam']:
-        for feature in ['smiling']:
-        # for feature in ['smiling']:
-            cnn = Cnn(feature, augment=False, suffix='cnn5-aug-{}'.format(opt))
-            cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
-            cnn.prepare_generator()
+    for feature in ALL_CLASSIFICATION:
+        cnn = Cnn(feature, augment=True, suffix='cnn3+fc-FINAL')
+        cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
+        cnn.prepare_generator()
 
-            # cnn.setup_mlp_model('sgd')
-            # cnn.setup_cnn_model('adam')
-            cnn.setup_cnn5_no_fc(opt)
-            # cnn.setup_mobilenetv2()
-            cnn.model.summary()
+        cnn.custom_test_dataset(os.path.join(cnn.pp.dataset_dir, "..", "testing_prediction","dataset"))
 
-            history = cnn.train_model()
-            Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
-            cnn.evaluate_model(cnn.valid_generator)
-            # # results = cnn.evaluate_model(cnn.test_generator)
-            cnn.saving_model()
+        # cnn.setup_mlp_model('sgd')
+        cnn.setup_cnn_model('adam')
+        # cnn.setup_cnn5_no_fc('adam')
+        # cnn.setup_mobilenetv2()
+        cnn.model.summary()
 
-            dataframe = cnn.predict_model(cnn.test_generator)
-            accuracy, f1 = cnn.manual_check_model(dataframe)
-            print 'f1 score:', f1
-            cnn.save_csv(dataframe, accuracy)
+        history = cnn.train_model()
+        Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
+        cnn.evaluate_model(cnn.valid_generator)
+        # # results = cnn.evaluate_model(cnn.test_generator)
+        cnn.saving_model()
+
+        dataframe = cnn.predict_model(cnn.test_generator)
+        # accuracy, f1 = cnn.manual_check_model(dataframe)
+        # print 'f1 score:', f1
+        cnn.save_csv(dataframe, 0)

@@ -1,25 +1,51 @@
-# from __future__ import print_function
 
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import model_from_json
-from preprocess import Preprocess
+from keras import optimizers
+# from preprocess import Preprocess
 import numpy as np
 import os
 import pandas as pd
+from tools.utils import Utilities as uti
 
-cur_dir = os.path.dirname(os.path.realpath(__file__))
-name = cur_dir + '/models/eyeglasses_200_128_'
-feature_tested = 'eyeglasses'
-# load json and create model
-json_file = open(name + 'model.json', 'r')
-loaded_model_json = json_file.read()
-json_file.close()
-loaded_model = model_from_json(loaded_model_json)
-# load weights into new model
-loaded_model.load_weights(name + "model.h5")
-print("Loaded model from disk")
- 
-loaded_model.summary()
+current_dir = os.path.dirname(os.path.realpath(__file__))
+
+ALL_CLASSIFICATION = ['hair_color', 'eyeglasses', 'smiling', 'young', 'human']
+
+test_datagen = ImageDataGenerator(rescale=1./255.)
+test_generator = test_datagen.flow_from_directory(directory=os.path.join(current_dir, "testing_dataset"),
+                                                  target_size=(256, 256),
+                                                  color_mode="rgb",
+                                                  class_mode=None,
+                                                  batch_size=1,
+                                                  shuffle=False,
+                                                  seed=42,
+                                                  )
+
+for feature_tested in ['hair_color']:
+    # load json and create model
+    json_file = open('models/{}_cnn3fc_model.json'.format(feature_tested), 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = model_from_json(loaded_model_json)
+    # load weights into new model
+    loaded_model.load_weights("models/{}_cnn3fc_model.h5".format(feature_tested))
+    print("Loaded model from disk")
+    # loaded_model.summary()
+    optimizer = optimizers.Adam(lr=0.0001)
+    loss = 'categorical_crossentropy'
+
+    loaded_model.compile(optimizer, loss=loss, metrics=["accuracy"])
+    test_generator.reset()
+
+    pred = loaded_model.predict_generator(test_generator, verbose=1, steps=test_generator.n//test_generator.batch_size)
+
+    predicted_class_indices = np.argmax(pred, axis=1)
+    labels = [0,1,2,3,4,5]
+    labels = dict((v, k) for k, v in labels.items())
+    predictions = [labels[k] for k in predicted_class_indices]
+
+    results = uti.to_dataframe(test_generator.filenames, predictions)
 
 '''
 
