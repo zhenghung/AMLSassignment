@@ -403,7 +403,7 @@ if __name__ == "__main__":
     for opt in ['adam']:
         for feature in ['smiling']:
         # for feature in ['smiling']:
-            cnn = Cnn(feature, augment=True, suffix='cnn5-aug-{}'.format(opt))
+            cnn = Cnn(feature, augment=False, suffix='cnn5-aug-{}'.format(opt))
             cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
             cnn.prepare_generator()
 
