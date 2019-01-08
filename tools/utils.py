@@ -5,7 +5,7 @@ class Utilities:
 
     @staticmethod
     def to_dataframe(name_list, pred_list):
-        names = [name.zfill(10) for name in name_list]
+        names = [name.split('/')[-1].zfill(10) for name in name_list]
         df = pd.DataFrame({"Filename": names,
                            "Predictions": pred_list})
         df = df.sort_values('Filename')

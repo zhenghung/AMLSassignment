@@ -4,6 +4,10 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
+from sklearn.utils import class_weight
+from keras.applications.mobilenet_v2 import MobileNetV2
+from sklearn import metrics
+
 import pandas as pd
 import numpy as np
 import os
@@ -48,13 +52,14 @@ class Cnn:
         self.test_generator = None
         self.model = None
 
-    def call_preprocess(self, shuffle, compress):
+    def call_preprocess(self, shuffle, compress, compress_size=None):
         print "Preprocessing Dataset.."
-        self.pp = Preprocess(shuffle=shuffle, compress=compress)
-        noise_free_list = self.pp.filter_noise()
-        train_list, val_list, test_list = self.pp.split_train_val_test(noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
-        self.pp.dir_for_train_val_test(train_list, val_list, test_list)
-        train_path, test_path = self.pp.new_csv(train_list, test_list)
+        self.pp = Preprocess(shuffle=shuffle, compress=compress, compress_size=compress_size)
+        # noise_free_list = self.pp.filter_noise()
+        # train_list, val_list, test_list = self.pp.split_train_val_test(noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
+        # self.pp.dir_for_train_val_test(train_list, val_list, test_list)
+        # train_path, test_path = self.pp.new_csv(train_list, test_list)
+        train_path, test_path = self.pp.new_csv([], [])
 
         self.traindf = pd.read_csv(train_path, names=['file_name']+ALL_CLASSIFICATION)
         self.testdf = pd.read_csv(test_path, names=['file_name']+ALL_CLASSIFICATION)
@@ -79,11 +84,11 @@ class Cnn:
         if self.augment:
             self.datagen = ImageDataGenerator(rescale=1./255.,
                                               validation_split=0.25,
-                                              rotation_range=10,
+                                              rotation_range=5,
                                               # width_shift_range=0.2,
                                               # height_shift_range=0.2,
                                               # shear_range=0.1,
-                                              zoom_range=0.2,
+                                              zoom_range=0.1,
                                               horizontal_flip=True,
                                               fill_mode='nearest')
         else:
@@ -126,26 +131,37 @@ class Cnn:
                                                                     class_mode=self.class_mode,
                                                                     target_size=(INPUT_DIM, INPUT_DIM))
 
-    def setup_cnn_model(self):
+    def custom_test_dataset(self, directory):
+        self.test_datagen = ImageDataGenerator(rescale=1. / 255.)
+        self.test_generator = self.test_datagen.flow_from_directory(directory=directory,
+                                                                    target_size=(256, 256),
+                                                                    color_mode="rgb",
+                                                                    class_mode=None,
+                                                                    batch_size=1,
+                                                                    shuffle=False,
+                                                                    seed=42,
+                                                                    )
+
+    def setup_cnn_model(self, opt):
         print "{} Model setup".format(self.feature_tested)
         self.model = Sequential()
-        self.model.add(Conv2D(32, (3, 3), input_shape=(INPUT_DIM, INPUT_DIM, 3)))
+        self.model.add(Conv2D(32, (3, 3), padding='same', input_shape=(INPUT_DIM, INPUT_DIM, 3)))
         self.model.add(Activation('relu'))
-        self.model.add(Conv2D(32, (3, 3)))
-        self.model.add(Activation('relu'))
-        self.model.add(MaxPooling2D(pool_size=(2, 2)))
-        self.model.add(Dropout(0.25))
-
-        self.model.add(Conv2D(64, (3, 3)))
-        self.model.add(Activation('relu'))
-        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Conv2D(32, (3, 3), padding='same'))
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
 
-        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
         self.model.add(Activation('relu'))
-        self.model.add(Conv2D(64, (3, 3)))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
         self.model.add(Activation('relu'))
         self.model.add(MaxPooling2D(pool_size=(2, 2)))
         self.model.add(Dropout(0.25))
@@ -153,16 +169,20 @@ class Cnn:
         self.model.add(Flatten())
         self.model.add(Dense(256))
         self.model.add(Activation('relu'))
-
-        self.model.add(Dropout(0.5))
-        self.model.add(Dense(256))
-        self.model.add(Activation('relu'))
-        self.model.add(Dropout(0.5))
+        self.model.add(Dropout(0.2))
         
-        # optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
-        # optimizer = optimizers.Adam(lr=0.0001)
-        optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
-        # optimizer = optimizers.Adagrad(lr=0.001, epsilon=None, decay=0.0)
+        if opt == 'sgd':
+            optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        elif opt == 'adam':
+            optimizer = optimizers.Adam(lr=0.0001)
+        elif opt == 'rmsprop':
+            optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
+        elif opt == 'adagrad':
+            optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+        elif opt == 'adadelta':
+            optimizer = optimizers.Adadelta(lr=0.001)
+        elif opt == 'adamax':
+            optimizer = optimizers.Adamax(lr=0.002)
 
         if self.multiclass:
             self.model.add(Dense(self.output_dim, activation='softmax'))
@@ -173,20 +193,26 @@ class Cnn:
             
         self.model.compile(optimizer, loss=loss, metrics=["accuracy"])
 
-    def setup_mlp_model(self):
+    def setup_mlp_model(self, opt):
         self.model = Sequential()
         self.model.add(Flatten(input_shape=(INPUT_DIM, INPUT_DIM, 3)))
-        self.model.add(Dense(256, activation='relu'))
-        self.model.add(Dropout(0.5))
-        self.model.add(Dense(256, activation='relu'))
-        self.model.add(Dropout(0.5))
-        self.model.add(Dense(256, activation='relu'))
-        self.model.add(Dropout(0.5))
+        self.model.add(Dense(128, activation='relu'))
+        self.model.add(Dropout(0.1))
+        self.model.add(Dense(128, activation='relu'))
+        self.model.add(Dropout(0.1))
 
-        optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
-        # optimizer = optimizers.Adam(lr=0.0001)
-        # optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
-        # optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+        if opt == 'sgd':
+            optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        elif opt == 'adam':
+            optimizer = optimizers.Adam(lr=0.0001)
+        elif opt == 'rmsprop':
+            optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
+        elif opt == 'adagrad':
+            optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+        elif opt == 'adadelta':
+            optimizer = optimizers.Adadelta(lr=0.001)
+        elif opt == 'adamax':
+            optimizer = optimizers.Adamax(lr=0.002)
 
         if self.multiclass:
             self.model.add(Dense(self.output_dim, activation='softmax'))
@@ -198,6 +224,82 @@ class Cnn:
         self.model.compile(loss=loss,
                            optimizer=optimizer,
                            metrics=['accuracy'])
+
+    def setup_cnn5_no_fc(self, opt):
+        print "{} Model setup".format(self.feature_tested)
+        self.model = Sequential()
+        self.model.add(Conv2D(32, (3, 3), padding='same', input_shape=(INPUT_DIM, INPUT_DIM, 3)))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(32, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(Conv2D(64, (3, 3), padding='same'))
+        self.model.add(Activation('relu'))
+        self.model.add(MaxPooling2D(pool_size=(2, 2)))
+        self.model.add(Dropout(0.25))
+
+        self.model.add(Conv2D(256, (8, 8)))
+        self.model.add(Activation('relu'))
+        self.model.add(Dropout(0.2))
+        self.model.add(Conv2D(256, (1, 1)))
+        self.model.add(Activation('relu'))
+        self.model.add(Dropout(0.2))
+
+        self.model.add(Conv2D(self.output_dim, (1, 1)))
+        self.model.add(Flatten())
+
+
+        if opt == 'sgd':
+            optimizer = optimizers.SGD(lr=0.0001, decay=1e-6, momentum=0.9, nesterov=True)
+        elif opt == 'adam':
+            optimizer = optimizers.Adam(lr=0.0001)
+        elif opt == 'rmsprop':
+            optimizer = optimizers.RMSprop(lr=0.0001, decay=1e-6)
+        elif opt == 'adagrad':
+            optimizer = optimizers.Adagrad(lr=0.0001, epsilon=None, decay=0.0)
+        elif opt == 'adadelta':
+            optimizer = optimizers.Adadelta(lr=0.001)
+        elif opt == 'adamax':
+            optimizer = optimizers.Adamax(lr=0.002)
+
+        if self.multiclass:
+            self.model.add(Activation('softmax'))
+            loss = 'categorical_crossentropy'
+        else:
+            self.model.add(Activation('sigmoid'))
+            loss = 'binary_crossentropy'
+
+        self.model.compile(optimizer, loss=loss, metrics=["accuracy"])
+
+    def setup_mobilenetv2(self):
+        self.model = MobileNetV2(input_shape=None, alpha=2.0, depth_multiplier=1, include_top=True, weights=None, input_tensor=None, pooling=None, classes=self.output_dim)
+        loss = 'categorical_crossentropy'
+        self.model.compile(optimizers.RMSprop(lr=0.0001, decay=1e-6), loss=loss, metrics=["accuracy"])
 
     def train_model(self):
         print "{} Model fitting...".format(self.feature_tested)
@@ -211,13 +313,20 @@ class Cnn:
                                         mode='min',
                                         restore_best_weights=True)]
 
+        truth_list = list(self.traindf[self.feature_tested])
+        weights = class_weight.compute_class_weight('balanced', self.train_generator.class_indices.keys(), truth_list)
+        weights_dict = {}
+        for i in range(len(weights)):
+            weights_dict[self.train_generator.class_indices.keys()[i]] = weights[i]
+
         analysis = self.model.fit_generator(generator=self.train_generator,
                                             steps_per_epoch=STEP_SIZE_TRAIN,
                                             validation_steps=STEP_SIZE_VALID,
                                             validation_data=self.valid_generator,
                                             callbacks=early_stopping,
-                                            verbose=2,
+                                            verbose=1,
                                             workers=4,
+                                            class_weight=weights_dict,
                                             epochs=EPOCH_SIZE)
         return analysis
 
@@ -267,18 +376,29 @@ class Cnn:
 
     def manual_check_model(self, results):
         truth_list = list(self.testdf[self.feature_tested])
-
         predictions = list(results['Predictions'])
+        average = 'binary'
+        if self.multiclass:
+            average = 'weighted'
+        f1_score = metrics.f1_score(truth_list, predictions, average=average)
+
         count = 0
         for i in range(len(truth_list)):
             if truth_list[i] == predictions[i]:
                 count += 1
         accuracy = count/float(len(truth_list))
         print "Accuracy: {:.2f}%".format(accuracy*100)
-        return accuracy
+        return accuracy, f1_score
 
     def save_csv(self, dataframe, accuracy):
+        if self.feature_tested != 'hair_color':
+            print "Zeroes back to -1 for binary cases"
+            for index, row in dataframe.iterrows():
+                if row['Predictions'] == 0:
+                    dataframe['Predictions'][index] = -1
+
         # Saving Results into csv
+        print dataframe.head()
         csv_file = "results/{}_{}_{}_results_{}.csv".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM, self.suffix)
         dataframe.to_csv(csv_file,index=False)
 
@@ -289,24 +409,26 @@ class Cnn:
 
 if __name__ == "__main__":
 
-    # for feature in ALL_CLASSIFICATION:
-
-    # for feature in ['eyeglasses', 'smiling', 'young', 'human']:
-    for feature in ['human']:
-        cnn = Cnn(feature, augment=False, suffix='mlp_no_aug_3layer_sgd')
-        cnn.call_preprocess(shuffle=True, compress=False)
+    for feature in ALL_CLASSIFICATION:
+        cnn = Cnn(feature, augment=True, suffix='cnn3+fc-FINAL')
+        cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
         cnn.prepare_generator()
-        
-        cnn.setup_mlp_model()
-        # cnn.setup_cnn_model()
+
+        cnn.custom_test_dataset(os.path.join(cnn.pp.dataset_dir, "..", "testing_prediction","dataset"))
+
+        # cnn.setup_mlp_model('sgd')
+        cnn.setup_cnn_model('adam')
+        # cnn.setup_cnn5_no_fc('adam')
+        # cnn.setup_mobilenetv2()
         cnn.model.summary()
 
         history = cnn.train_model()
         Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
         cnn.evaluate_model(cnn.valid_generator)
         # # results = cnn.evaluate_model(cnn.test_generator)
-        # cnn.saving_model()
+        cnn.saving_model()
 
         dataframe = cnn.predict_model(cnn.test_generator)
-        accuracy = cnn.manual_check_model(dataframe)
-        uti.save_csv(dataframe, accuracy, "{}_{}_{}_results_{}".format(cnn.feature_tested, EPOCH_SIZE, INPUT_DIM, cnn.suffix))
+        # accuracy, f1 = cnn.manual_check_model(dataframe)
+        # print 'f1 score:', f1
+        cnn.save_csv(dataframe, 0)

@@ -4,8 +4,10 @@ import dlib_extractor as dext
 from sklearn import svm
 from sklearn.model_selection import learning_curve
 from sklearn.model_selection import ShuffleSplit
-
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import validation_curve
+from sklearn.model_selection import GridSearchCV
+
 from sklearn.linear_model import Ridge
 
 import numpy as np
@@ -22,7 +24,7 @@ feature = 'face_features'
 class SvmClassification:
     def __init__(self, train_split):
         print "Sampling Training and Testing data ..."
-        self.pp = Preprocess(shuffle=True, compress=False)
+        self.pp = Preprocess(shuffle=True, compress=False, compress_size=256)
         self.data_list = self.pp.filter_noise()
         self.train_split = train_split
         self.all_classifications = ['hair_color', 'eyeglasses', 'smiling', 'young', 'human']
@@ -51,6 +53,15 @@ class SvmClassification:
         te_X = np.array([X[x] for x in test_list])
         te_Y = np.array([y[x] for x in test_list])
         return tr_X, tr_Y, te_X, te_Y
+
+    @staticmethod
+    def flatten_features(landmark_points):
+        if len(landmark_points.shape) > 3:
+            nsamples, nx, ny, rgb = landmark_points.shape
+            return landmark_points.reshape((nsamples, nx*ny*rgb))
+        else:
+            nsamples, nx, ny = landmark_points.shape
+            return landmark_points.reshape((nsamples, nx*ny))
 
     @staticmethod
     def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None, n_jobs=None, train_sizes=np.linspace(.1, 1.0, 10)):
@@ -82,27 +93,56 @@ class SvmClassification:
         plt.legend(loc="best")
         return plt
 
+    def grid_search_best_param(self, estimator, X, y, paramA_type, paramA, paramB_type, paramB):
+        parameters = {paramA_type: paramA, paramB_type: paramB}
+        grid_obj = GridSearchCV(estimator, parameters, cv=5)
+        grid_obj.fit(X, y)
+        scores = grid_obj.cv_results_['mean_test_score'].reshape(len(paramA), len(paramB))
+        scores = map(list, zip(*scores))
+
+        plt.figure(figsize=(8, 6))
+        plt.subplot()
+        # plt.subplots_adjust(left=.2, right=0.95, bottom=0.15, top=0.95)
+        plt.imshow(scores, interpolation='nearest', cmap=plt.cm.hot)
+        plt.xlabel(paramA_type)
+        plt.ylabel(paramB_type)
+        plt.colorbar()
+        plt.xticks(np.arange(len(paramA)), paramA)
+        plt.yticks(np.arange(len(paramB)), paramB)
+        plt.title('{} Grid Search AUC Score'.format(self.feature_tested))
+        plt.show(block=False)
+        plt.savefig('plots/{}_{}_gridsearch_{}.png'.format(paramA_type, paramB_type, self.feature_tested))
+
     def train_svm(self, training_images, training_labels):
 
         print "Training ... "
 
-        if len(training_images.shape)>3:
-            nsamples, nx, ny, rgb = training_images.shape
-            reshaped_training_images = training_images.reshape((nsamples, nx*ny*rgb))
-        else:
-            nsamples, nx, ny = training_images.shape
-            reshaped_training_images = training_images.reshape((nsamples, nx*ny))
-
-        X = reshaped_training_images
+        X = SvmClassification.flatten_features(training_images)
         y = training_labels
 
-        estimator = svm.SVC(gamma='scale', decision_function_shape='ovr', class_weight='balanced')
+        if self.feature_tested == 'hair_color':
+            estimator = svm.SVC(gamma='scale', decision_function_shape='ovr', class_weight='balanced', max_iter=2000)
+        else:
+            estimator = svm.SVC(gamma='scale', decision_function_shape='ovo', class_weight='balanced', max_iter=2000)
 
-        cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
-        SvmClassification.plot_learning_curve(estimator, "SVM - {}".format(self.feature_tested), X, y, ylim=None, cv=cv, n_jobs=4)
-        plt.show(block=False)
+        # estimator = svm.SVC(gamma='scale', decision_function_shape='ovr', class_weight='balanced', max_iter=5000)
 
-        estimator.fit(reshaped_training_images, training_labels)
+        # Grid Search to find best parameters
+        # kernel = ('linear', 'rbf', 'poly')
+        class_weight=['balanced', None]
+        decision_function_shape = ['ovr', 'ovo']
+        # gamma = ('scale', 'auto')
+        # C = [0.001, 0.01, 0.1, 1, 10, 100]
+        # degree = [2,3,4]
+        print estimator.get_params().keys()
+        # self.grid_search_best_param(estimator, X, y, 'decision_function_shape', decision_function_shape, 'class_weight', class_weight)
+
+        # cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
+        # print "cv", cv
+        # SvmClassification.plot_learning_curve(estimator, "SVM - {}".format(self.feature_tested), X, y, ylim=None, cv=cv, n_jobs=4)
+        # plt.savefig('plots/{}_score.png'.format(self.feature_tested))
+
+        estimator.fit(X, training_labels)
         
         return estimator
 
@@ -110,29 +150,23 @@ class SvmClassification:
 
         print "Testing ... "
 
-        if len(test_images.shape) > 3:
-            nsamples, nx, ny, rgb = test_images.shape
-            new_test_images = test_images.reshape((nsamples, nx*ny*rgb))
-        else:
-            nsamples, nx, ny = test_images.shape
-            new_test_images = test_images.reshape((nsamples, nx*ny))
+        new_test_images = SvmClassification.flatten_features(test_images)
         
-        arr = estimator.predict(new_test_images)
-        count = 0
-        for i in range(len(test_images)):
-            if arr[i] == test_labels[i]:
-                count += 1
-        return (float(count)/len(test_images)), arr
+        y_pred = estimator.predict(new_test_images)
+
+        score = accuracy_score(y_true=test_labels, y_pred=y_pred)
+
+        return score, y_pred
 
 
 if __name__ == "__main__":
     svm_class = SvmClassification(0.8)
 
     perf = {}
-    for i in range(1):
+    for i in range(5):
 
-        for feature_tested in svm_class.all_classifications:
-        # for feature_tested in ['hair_color']:
+        # for feature_tested in svm_class.all_classifications:
+        for feature_tested in ['smiling']:
 
             tr_data, tr_lbl, te_data, te_lbl = svm_class.get_data(feature_tested)
             clf = svm_class.train_svm(tr_data, tr_lbl)
