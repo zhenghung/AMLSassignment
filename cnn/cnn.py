@@ -55,11 +55,11 @@ class Cnn:
     def call_preprocess(self, shuffle, compress, compress_size=None):
         print "Preprocessing Dataset.."
         self.pp = Preprocess(shuffle=shuffle, compress=compress, compress_size=compress_size)
-        # noise_free_list = self.pp.filter_noise()
-        # train_list, val_list, test_list = self.pp.split_train_val_test(noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
-        # self.pp.dir_for_train_val_test(train_list, val_list, test_list)
-        # train_path, test_path = self.pp.new_csv(train_list, test_list)
-        train_path, test_path = self.pp.new_csv([], [])
+        noise_free_list = self.pp.filter_noise()
+        train_list, val_list, test_list = self.pp.split_train_val_test(noise_free_list, 1-TEST_SPLIT,0,TEST_SPLIT)
+        self.pp.dir_for_train_val_test(train_list, val_list, test_list)
+        train_path, test_path = self.pp.new_csv(train_list, test_list)
+        #train_path, test_path = self.pp.new_csv([], [])
 
         self.traindf = pd.read_csv(train_path, names=['file_name']+ALL_CLASSIFICATION)
         self.testdf = pd.read_csv(test_path, names=['file_name']+ALL_CLASSIFICATION)
@@ -313,11 +313,14 @@ class Cnn:
                                         mode='min',
                                         restore_best_weights=True)]
 
-        truth_list = list(self.traindf[self.feature_tested])
-        weights = class_weight.compute_class_weight('balanced', self.train_generator.class_indices.keys(), truth_list)
-        weights_dict = {}
-        for i in range(len(weights)):
-            weights_dict[self.train_generator.class_indices.keys()[i]] = weights[i]
+        if self.multiclass is False:
+            truth_list = list(self.traindf[self.feature_tested])
+            weights = class_weight.compute_class_weight('balanced', self.train_generator.class_indices.keys(), truth_list)
+            weights_dict = {}
+            for i in range(len(weights)):
+                weights_dict[self.train_generator.class_indices.keys()[i]] = weights[i]
+        else:
+            weights_dict = None
 
         analysis = self.model.fit_generator(generator=self.train_generator,
                                             steps_per_epoch=STEP_SIZE_TRAIN,
@@ -341,6 +344,9 @@ class Cnn:
 
     def saving_model(self):
         # Saving Model
+        if not os.path.isdir(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")):
+            os.makedirs(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models"))
+
         model_name = "models/{}_{}_{}_".format(self.feature_tested, EPOCH_SIZE, INPUT_DIM)
         # serialize model to JSON
         model_json = self.model.to_json()
@@ -391,6 +397,9 @@ class Cnn:
         return accuracy, f1_score
 
     def save_csv(self, dataframe, accuracy):
+        if not os.path.isdir(os.path.join(os.path.dirname(os.path.realpath(__file__)), "results")):
+            os.makedirs(os.path.join(os.path.dirname(os.path.realpath(__file__)), "results"))
+
         if self.feature_tested != 'hair_color':
             print "Zeroes back to -1 for binary cases"
             for index, row in dataframe.iterrows():
@@ -411,10 +420,10 @@ if __name__ == "__main__":
 
     for feature in ALL_CLASSIFICATION:
         cnn = Cnn(feature, augment=True, suffix='cnn3+fc-FINAL')
-        cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
+        cnn.call_preprocess(shuffle=True, compress=False, compress_size=INPUT_DIM)
         cnn.prepare_generator()
 
-        cnn.custom_test_dataset(os.path.join(cnn.pp.dataset_dir, "..", "testing_prediction","dataset"))
+        #cnn.custom_test_dataset(os.path.join(cnn.pp.dataset_dir, "..", "testing_prediction","dataset"))
 
         # cnn.setup_mlp_model('sgd')
         cnn.setup_cnn_model('adam')

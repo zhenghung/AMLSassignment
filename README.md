@@ -32,7 +32,7 @@ Download and extract the datasets into the repository from [here](https://drive.
 
 
 ## Libraries Used
-1. [Tensorflow](https://www.tensorflow.com/)
+1. [Tensorflow](https://www.tensorflow.org/install/)
 2. [Keras](https://keras.io/)
 3. [Scikit-learn](https://scikit-learn.org/stable/)
 4. [OpenCV](https://opencv.org/)
@@ -41,7 +41,7 @@ Download and extract the datasets into the repository from [here](https://drive.
 7. [numpy](http://www.numpy.org/)
 8. [pandas](https://pandas.pydata.org/)
 
-Note: Tensorflow GPU has potential for better performance during training if system has a dedicated graphics card. Please ensure prerequisites for tensorflow-gpu is met before pip installing it.
+Note: Tensorflow GPU has potential for better performance during training if system has a dedicated graphics card. Please ensure prerequisites for tensorflow-gpu is met before pip installing it. Follow the instructions [here](https://www.tensorflow.org/install/gpu).
 ```buildoutcfg
 $ sudo pip install tensorflow<-gpu> keras sklearn dlib matplotlib opencv-python numpy pandas 
 ```
@@ -100,6 +100,8 @@ $ python -m svm.classification
 
 Results are saved ```svm/results```
 
+Ensure that the ```shape_predictor_68_face_landmarks.dat``` file is located inside ./svm/. (Not zipped into turnitin due to size constraints)
+
 ### ConvNet and MLP
 
 Results are saved in ```cnn/results```
@@ -112,10 +114,10 @@ To change the models, open ```cnn/cnn.py``` with a text editor and scroll down t
 Uncomment one of the method calls for chosen models.
 
 ```
-419             # cnn.setup_mlp_model('sgd')
-420             # cnn.setup_cnn_model('adam')
-421             # cnn.setup_cnn5_no_fc(opt)
-422             # cnn.setup_mobilenetv2()
+422             # cnn.setup_mlp_model('sgd')
+423             # cnn.setup_cnn_model('adam')
+424             # cnn.setup_cnn5_no_fc(opt)
+425             # cnn.setup_mobilenetv2()
 ```
 Modify the suffix parameter in line 413 to save the results and models with a different name
 
@@ -130,14 +132,16 @@ In the main repository directory ./, open the terminal and run the python module
 $ python -m cnn.cnn
 ```
 
-#### Write your own main
+#### Run your own main
 ```buildoutcfg
 from cnn.cnn import cnn
 from tools.preprocess import preprocess
 
 # preprocessing
 cnn = Cnn(feature, augment=True, suffix='cnn3+fc-FINAL')
-cnn.call_preprocess(shuffle=False, compress=False, compress_size=INPUT_DIM)
+cnn.call_preprocess(shuffle=True,      # Must be true if running first time 
+                    compress=False, 
+                    compress_size=INPUT_DIM)
 cnn.prepare_generator()
 
 # Building your model
@@ -148,11 +152,16 @@ cnn.model.summary()
 history = cnn.train_model()
 Plotting.plot_history(history, '', EPOCH_SIZE, cnn.feature_tested, cnn.suffix, save=True, show=False)
 cnn.evaluate_model(cnn.valid_generator)
-cnn.saving_model()
+cnn.saving_model()  # Saves model into a model folder in ./cnn/
 
 dataframe = cnn.predict_model(cnn.test_generator)
 accuracy, f1 = cnn.manual_check_model(dataframe)
 print 'f1 score:', f1
 cnn.save_csv(dataframe, accuracy)
 
+```
+
+Run main.py, if located in ./ with
+```
+python -m main
 ```
